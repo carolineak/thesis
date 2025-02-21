@@ -1,0 +1,24 @@
+Mail til vejleder
+
+Mail 1
+Jeg skal skrive speciale i blok 1 og 2 og er på udkig efter en speciale vejleder. 
+
+Meget generelt, er jeg interesseret i at lave et projekt, der kan optimere performance. Det kunne både være algoritmisk, i forhold til memory eller på compiler niveau. Eller noget helt fjerde, er meget åben for ideer. Jeg synes at det algoritmiske, teoretiske aspekt af programmering kombineret med praktisk at implementere det, er rigtig sjovt. 
+
+Jeg har snakket med mit arbejde om at skrive speciale i samarbejde med dem. Virksomheden hedder TICRA og laver software, der modellerer antenner til satelitter. Jeg sidder i mat afdelingen og har hjulpet med at implementere og accellere algoritmer skrevet i (modern) fortran. 
+
+Jeg har kigget på dine projekter på dikus hjemmeside og syntes også du var en god vejleder, da vi lavede mini-projekt om Implementering af Kvantealgoritmer i Advanced Topics in Programming Languages. Så jeg ville høre, om du havde tid og lyst til at vejlede et sådant slags speciale til efteråret?
+
+
+Mail 2
+Hej Martin 
+
+Tak for hurtigt svar og skønt!
+
+Jeg snakker videre med mit arbejde om nogle lidt mere konkrete ideer (og om platforme/arkitekture) og vender tilbage. 
+
+Det lyder godt at mødes i løbet af foråret og aftale nærmere:)
+
+Bedste hilsner, 
+Caroline
+
