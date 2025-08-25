@@ -1,35 +1,4 @@
 module block_sparse_format_test_module
-#if __ticra_tools
-#if __grasp_unreleased
-
-    use module_test_module, only: module_test_type
-    use error_handler_module, only: error_handler_type
-
-    implicit none
-    private
-    public :: block_sparse_format_test_type
-
-    type, extends(module_test_type) :: block_sparse_format_test_type
-    contains
-        procedure :: setup
-        procedure :: run_case_01
-    end type block_sparse_format_test_type
-
-contains
-
-    subroutine setup(this, status)
-
-        class(block_sparse_format_test_type), intent(inout) :: this
-        type(error_handler_type), intent(inout) :: status
-
-        call this%setup_cases(status, 1, 1, &
-            description = "Test case for block sparse format", &
-            alias = "block_sparse_format_test", &
-            tags = "block_sparse_format")
-
-    end subroutine setup
-
-    subroutine run_case_01(this, status)
 
     use vectorized_random_module, only: randn, set_stream, vsl_stream_state
     use kind_module, only: long
@@ -154,8 +123,4 @@ contains
     norm = norm2(abs(diff_matrix))/norm2(abs(dense_matrix))
     print *, "norm:", norm
 
-    end subroutine run_case_01
-
-#endif __grasp_unreleased
-#endif __ticra_tools
 end module block_sparse_format_test_module

@@ -1,8 +1,4 @@
 module block_sparse_format_module
-#if __ticra_tools
-#define STRINGIFY(x) #x
-#define TOSTRING(x) STRINGIFY(x)
-#define _AT_ __file__ // ":" // TOSTRING(__line__)
 
 use kind_module, only: wp => long, long
 use error_handler_module, only: error_handler_type, err, error_type_allocation
@@ -342,24 +338,7 @@ contains
 
                 end do
             end do
-
-
         end do
-
-        ! ==========================================================
-        ! Not needed for a first implementation
-        ! ----------------------------------------------------------
-        ! Extract remaining indices for recursive factorization
-        ! --- Insert code ---
-
-        ! if (n_rem < 5000) then
-        !    call dense_lu(...)
-        ! else
-        !    call sparse_lu(...)
-        ! end if
-        ! ==========================================================
-
     end subroutine sparse_lu
 
-#endif __ticra_tools
 end module block_sparse_format_module
