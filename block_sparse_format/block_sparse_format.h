@@ -13,8 +13,8 @@ typedef struct {
 
 // Integer range
 typedef struct {
-    int start;     
-    int end;       
+    int start;
+    int end;
 } int_range;
 
 // Slice of blocks in a row/col
@@ -28,12 +28,12 @@ typedef struct {
 typedef struct {
     int m, n;               // Global size of block matrix
     matrix_block *blocks;   // All blocks in matrix
-    
+
     int num_blocks;         // Number of blocks
 
     int num_rows;           // Number of block-rows
     int num_cols;           // Number of block-cols
-    
+
     block_slice *rows;      // Row slices
     block_slice *cols;      // Col slices
 
@@ -111,4 +111,4 @@ int create(block_sparse_format *bsf,
            const matrix_block *values,
            int num_blocks);
 
-#endif 
+#endif

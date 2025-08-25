@@ -23,8 +23,8 @@ static inline int range_length(int_range r) {
 // Arguments
 //   bsf        : block_sparse_format (output)
 //   rows       : array of row indices
-//   cols       : array of col indices 
-//   values     : array of matrix_block 
+//   cols       : array of col indices
+//   values     : array of matrix_block
 //   num_blocks : number of blocks
 //
 // Returns 0 on success, <0 on allocation failure
@@ -66,13 +66,13 @@ int create(block_sparse_format *bsf,
     for (i = 0; i < num_rows; i++) {
         if (bsf->rows[i].num_blocks > 0) {
             bsf->rows[i].indices = (int*)malloc(bsf->rows[i].num_blocks * sizeof(int));
-            bsf->rows[i].num_blocks = 0; 
+            bsf->rows[i].num_blocks = 0;
         }
     }
     for (i = 0; i < num_cols; i++) {
         if (bsf->cols[i].num_blocks > 0) {
             bsf->cols[i].indices = (int*)malloc(bsf->cols[i].num_blocks * sizeof(int));
-            bsf->cols[i].num_blocks = 0; 
+            bsf->cols[i].num_blocks = 0;
         }
     }
 

@@ -19,22 +19,26 @@ static void copy_block_from_dense(const float *dense, int n,
 
 int main(void) {
     // Parameters
-    // ===================================================================
     const int n = 8;   // Matrix size
     const int b = 2;   // Block size
+    #define NUM_BLOCKS 8 // Number of blocks
 
-    // Create dense matrix randomly filled
+    // Generate matrix with the block structure
+    // 1 - 5 -
+    // - 3 6 -
+    // 2 4 7 -
+    // - - - 8
+
+    // Create dense matrix and fill it with random floats
     // ===================================================================
     float *dense = (float*)malloc((size_t)n * (size_t)n * sizeof(float));
     if (!dense) { fprintf(stderr, "Alloc dense failed\n"); return 1; }
 
-    srand(42u);
     for (int i = 0; i < n*n; i++) dense[i] = frand();
 
     // Fill zero-blocks (2x2 block grid indices)
     // Pattern of zero blocks:
     // (0,1), (0,3), (1,0), (1,3), (2,3), (3,0), (3,1), (3,2)
-    // ===================================================================
     int zb[][2] = {
         {0,1},{0,3},{1,0},{1,3},{2,3},{3,0},{3,1},{3,2}
     };
@@ -52,7 +56,7 @@ int main(void) {
     // ===================================================================
     // Get blocks from dense matrix (all are b×b)
     // 1:(0,0)  2:(2,0)  3:(1,1)  4:(2,1)  5:(0,2)  6:(1,2)  7:(2,2)  8:(3,3)
-    matrix_block values[8];
+    matrix_block values[NUM_BLOCKS];
     copy_block_from_dense(dense, n, 0*b, 0*b, b, &values[0]); // 1
     copy_block_from_dense(dense, n, 2*b, 0*b, b, &values[1]); // 2
     copy_block_from_dense(dense, n, 1*b, 1*b, b, &values[2]); // 3
@@ -63,31 +67,22 @@ int main(void) {
     copy_block_from_dense(dense, n, 3*b, 3*b, b, &values[7]); // 8
 
     // Set block pattern (0-based)
-    // ===================================================================
-    int rows[8] = {0, 2, 1, 2, 0, 1, 2, 3};
-    int cols[8] = {0, 0, 1, 1, 2, 2, 2, 3};
+    int rows[NUM_BLOCKS] = {0, 2, 1, 2, 0, 1, 2, 3};
+    int cols[NUM_BLOCKS] = {0, 0, 1, 1, 2, 2, 2, 3};
 
     // Create sparse matrix
-    // ===================================================================
     block_sparse_format bsf = {0};
-    int rc = create(&bsf, rows, cols, values, 8);
-    if (rc != 0) {
-        fprintf(stderr, "Create() failed: %d\n", rc);
-        for (int i = 0; i < 8; i++) matrix_block_free(&values[i]);
+    int status = create(&bsf, rows, cols, values, NUM_BLOCKS);
+    if (status != 0) {
+        fprintf(stderr, "Create() failed: %d\n", status);
+        for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
         free(dense);
         return 1;
     }
 
-    // Print meta info
+    // Print information for verifying
     // ===================================================================
-    printf("Global size: %d x %d\n", bsf.m, bsf.n);
-    for (int r = 0; r < bsf.num_rows; r++)
-        printf("Row slice %d: [%d .. %d]\n", r, bsf.rows[r].range.start, bsf.rows[r].range.end);
-    for (int c = 0; c < bsf.num_cols; c++)
-        printf("Col slice %d: [%d .. %d]\n", c, bsf.cols[c].range.start, bsf.cols[c].range.end);
-
     // Print dense matrix
-    // ===================================================================
     printf("\nDense matrix (row-major):\n");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++)
@@ -95,8 +90,15 @@ int main(void) {
         printf("\n");
     }
 
+    // Print information about the sparse matrix
+    printf("Global size: %d x %d\n", bsf.m, bsf.n);
+    for (int r = 0; r < bsf.num_rows; r++)
+        printf("Row slice %d: [%d .. %d]\n", r, bsf.rows[r].range.start, bsf.rows[r].range.end);
+    for (int c = 0; c < bsf.num_cols; c++)
+        printf("Col slice %d: [%d .. %d]\n", c, bsf.cols[c].range.start, bsf.cols[c].range.end);
+
+
     // Print blocks
-    // ===================================================================
     for (int bidx = 0; bidx < bsf.num_blocks; bidx++) {
         const matrix_block *Bv = &bsf.blocks[bidx];
         printf("\nBlock %d at (%d,%d), size %zu x %zu:\n",
@@ -108,9 +110,12 @@ int main(void) {
         }
     }
 
+    // Compute matvec for both dense and sparse matrix to test validity
+    // ===================================================================
+    // TODO
+
     // Cleanup
     // ===================================================================
-    for (int i = 0; i < 8; i++) matrix_block_free(&values[i]); // Temp input blocks
     bsf_free(&bsf);
     free(dense);
     return 0;
