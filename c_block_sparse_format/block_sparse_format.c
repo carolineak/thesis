@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <complex.h>
+#include <cblas.h>
+#include <lapacke.h>
 #include "block_sparse_format.h"
 
 // ===== Helper functions =====
@@ -102,7 +105,7 @@ int create(block_sparse_format *bsf,
     for (i = 0; i < num_blocks; i++) {
         matrix_block_init(&bsf->blocks[i], values[i].rows, values[i].cols);
         memcpy(bsf->blocks[i].data, values[i].data,
-               values[i].rows * values[i].cols * sizeof(float));
+               values[i].rows * values[i].cols * sizeof(float complex));
     }
 
     // Compute size of matrix (m,n)
@@ -138,6 +141,71 @@ int create(block_sparse_format *bsf,
     }
     for (i = 0; i < num_cols; i++) {
         bsf->n += range_length(bsf->cols[i].range);
+    }
+
+    return 0;
+}
+
+// ===================================================================
+// Sparse_matvec
+//
+// Compute vec_out = (bsf) * vec_in  for single-precision complex
+//
+// Arguments
+//   bsf      : Block-sparse matrix (column-major blocks)
+//   vec_in   : Dense input vector (length = len_in  == bsf->n)
+//   len_in   : Length of vec_in
+//   vec_out  : Dense output vector (length = len_out == bsf->m)
+//   len_out  : Length of vec_out
+//
+// Returns 0 on success, <0 on error.
+// ===================================================================
+int sparse_matvec(const block_sparse_format *bsf,
+                  const float complex *vec_in,  int len_in,
+                  float complex *vec_out,       int len_out)
+{
+    // Check sizes match
+    if (len_in != bsf->n || len_out != bsf->m) {
+        // Non-compatible sizes
+        return -1;
+    }
+
+    // Set output to zero
+    for (int i = 0; i < len_out; ++i) vec_out[i] = 0.0f + 0.0f*I;
+
+    // Constants for accumulation: y_slice = 1*A*x_slice + 1*y_slice
+    const float complex alpha = 1.0f + 0.0f*I;
+    const float complex beta  = 1.0f + 0.0f*I;
+
+    // Loop over block-rows, then over blocks in each row
+    for (int j = 0; j < bsf->num_rows; ++j) {
+        const block_slice *row = &bsf->rows[j];
+        const int_range row_idx = row->range;                       // Output slice
+        const int row_start = row_idx.start;
+        const int M = row_idx.end - row_idx.start + 1;              // Rows in this block-row
+
+        for (int p = 0; p < row->num_blocks; ++p) {
+            int block_idx = row->indices[p];
+
+            // Column slice is determined by the block’s column index
+            int block_col = bsf->col_indices[block_idx];
+            const int_range col_idx = bsf->cols[block_col].range;   // Input slice
+            const int col_start = col_idx.start;
+            const int N = col_idx.end - col_idx.start + 1;          // Cols in this block-col
+
+            // Dense block
+            const matrix_block *blk = &bsf->blocks[block_idx];
+            const int lda = (int)blk->rows;                         // Leading dim (column-major)
+
+            // vec_out[row_start : row_start+M) += A_block * vec_in[col_start : col_start+N)
+            cblas_cgemv(CblasColMajor, CblasNoTrans,
+                        M, N,
+                        &alpha,
+                        blk->data, lda,
+                        vec_in + col_start, 1,
+                        &beta,
+                        vec_out + row_start, 1);
+        }
     }
 
     return 0;

@@ -3,12 +3,14 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <complex.h>
 
 // Dense matrix block
 typedef struct {
     size_t rows;    // Number of rows
     size_t cols;    // Number of cols
-    float *data;    // Size = rows*cols, column-major
+    float complex *data;    // Size = rows*cols, column-major'
+    // NOTE: right now the struct itself doesn’t own the storage for the matrix data — it just has a pointer
 } matrix_block;
 
 // Integer range
@@ -49,17 +51,17 @@ typedef struct {
 static inline void matrix_block_init(matrix_block *b, size_t r, size_t c) {
     b->rows = r;
     b->cols = c;
-    b->data = (r && c) ? (float*)calloc(r * c, sizeof(float)) : NULL;
+    b->data = (r && c) ? (float complex*)calloc(r * c, sizeof(float complex)) : NULL;
 }
 static inline void matrix_block_free(matrix_block *b) {
     free(b->data);
     b->data = NULL;
     b->rows = b->cols = 0;
 }
-static inline float matrix_block_get(const matrix_block *b, size_t i, size_t j) {
+static inline float complex matrix_block_get(const matrix_block *b, size_t i, size_t j) {
     return b->data[MB_INDEX(b, i, j)];
 }
-static inline void matrix_block_set(matrix_block *b, size_t i, size_t j, float v) {
+static inline void matrix_block_set(matrix_block *b, size_t i, size_t j, float complex v) {
     b->data[MB_INDEX(b, i, j)] = v;
 }
 
@@ -110,5 +112,10 @@ int create(block_sparse_format *bsf,
            const int *cols,
            const matrix_block *values,
            int num_blocks);
+
+// ==== Compute matvec with bsf ====
+int sparse_matvec(const block_sparse_format *bsf,
+                  const float complex *vec_in,  int len_in,
+                  float complex *vec_out,       int len_out);
 
 #endif
