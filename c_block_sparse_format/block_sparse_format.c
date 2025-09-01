@@ -3,7 +3,6 @@
 #include <string.h>
 #include <complex.h>
 #include <cblas.h>
-#include <lapacke.h>
 #include "block_sparse_format.h"
 
 // ===== Helper functions =====
@@ -197,7 +196,7 @@ int sparse_matvec(const block_sparse_format *bsf,
             const matrix_block *blk = &bsf->blocks[block_idx];
             const int lda = (int)blk->rows;                         // Leading dim (column-major)
 
-            // vec_out[row_start : row_start+M) += A_block * vec_in[col_start : col_start+N)
+            // vec_out[row_start : row_start+M] += A_block * vec_in[col_start : col_start+N]
             cblas_cgemv(CblasColMajor, CblasNoTrans,
                         M, N,
                         &alpha,
