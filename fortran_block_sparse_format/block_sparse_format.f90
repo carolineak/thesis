@@ -206,8 +206,6 @@ contains
             end do
         end do
 
-
-
     end subroutine sparse_matvec
 
     subroutine sparse_lu(this, rel_tol, status)
@@ -237,7 +235,7 @@ contains
         ! Outer loop: Eliminate blocks along the diagonal
         do i = 1, this%num_rows
 
-            ! Stage 3: LU factorize diagonal block (i,i)
+            ! LU factorize diagonal block (i,i)
             ! Find diagonal blocks
             do ii = 1, this%rows(i)%num_blocks
                 do j = 1, this%num_cols
@@ -253,7 +251,7 @@ contains
             ! Factor A_11 = L_11 U_11
             call lu(this%blocks(diagonal_blocks(i))%mat, status=status)
 
-            ! Stage 4: Create LU factors
+            ! Create LU factors
             ! Compute L_21 = A_21 U_11^-1
             do jj = 1, this%cols(i)%num_blocks
                 blk_idx = this%cols(i)%indices(jj) ! the block indices in the ith column
@@ -282,7 +280,7 @@ contains
                                status=status)
             end do
 
-            ! Stage 5: Schur complement update
+            ! Schur complement update
             ! Compute the Schur complement S = A_22 − L_21 U_12 and factor L_22 U_22 = S
             blk_is_present = .false.
             do ii = 1, this%rows(i)%num_blocks
@@ -322,8 +320,6 @@ contains
 
                 end do
             end do
-
-
         end do
 
     end subroutine sparse_lu
