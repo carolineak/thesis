@@ -226,13 +226,6 @@ contains
         integer :: A_22_idx, U_12_idx, L_21_idx
         logical :: blk_is_present
 
-        ! Enforce that the matrix is square
-        ! if (size(this, 1) /= size(this, 2)) then
-        !     ! Error
-        !     print *, 'Non square matrix'
-        !     return
-        ! end if
-
         ! Enforce a symmetric block structure (lazy check)
         if (this%num_rows /= this%num_cols) then
             print *, 'Non symmetric block structure'
@@ -243,15 +236,6 @@ contains
 
         ! Outer loop: Eliminate blocks along the diagonal
         do i = 1, this%num_rows
-            ! ==========================================================
-            ! Not needed for a first implementation
-            ! ----------------------------------------------------------
-            ! Stage 1: Compress fill-ins (if any are present)
-            ! --- Insert code ---
-
-            ! Stage 2: Sparsify fill-ins  (if any are present)
-            ! --- Insert code ---
-            ! ==========================================================
 
             ! Stage 3: LU factorize diagonal block (i,i)
             ! Find diagonal blocks
@@ -310,15 +294,15 @@ contains
                     if (this%row_indices(blk_idx) <= i) cycle
                     if (blk_idx == diagonal_blocks(i)) cycle
                     ! Check if intersecting block exists
-                    L_21_idx = this%cols(i)%indices(jj) ! 2 ! 4
-                    U_12_idx = this%rows(i)%indices(ii) ! 5 ! 6
-                    row_idx = this%row_indices(L_21_idx) ! 3 ! 3
-                    col_idx = this%col_indices(U_12_idx) ! 3 ! 3
+                    L_21_idx = this%cols(i)%indices(jj)
+                    U_12_idx = this%rows(i)%indices(ii)
+                    row_idx = this%row_indices(L_21_idx)
+                    col_idx = this%col_indices(U_12_idx)
                     do jjj = 1, size(this%col_indices)
                         if (this%col_indices(jjj) /= col_idx) cycle
                         do iii = jjj, size(this%row_indices)
                             if (this%row_indices(iii) /= row_idx) cycle
-                                A_22_idx = iii ! 7 ! 7
+                                A_22_idx = iii
                                 blk_is_present = .true.
                                 ! Escape the loop (not a problem, but redundant loops after this)
                         end do
@@ -338,7 +322,11 @@ contains
 
                 end do
             end do
+
+
         end do
+
     end subroutine sparse_lu
+
 
 end module block_sparse_format_module
