@@ -179,22 +179,23 @@ int sparse_matvec(const block_sparse_format *bsf,
     // Loop over block-rows, then over blocks in each row
     for (int j = 0; j < bsf->num_rows; ++j) {
         const block_slice *row = &bsf->rows[j];
-        const int_range row_idx = row->range;                       // Output slice
+        const int_range row_idx = row->range;                  
         const int row_start = row_idx.start;
-        const int M = row_idx.end - row_idx.start + 1;              // Rows in this block-row
+        const int M = row_idx.end - row_idx.start + 1;           
 
         for (int p = 0; p < row->num_blocks; ++p) {
             int block_idx = row->indices[p];
 
             // Column slice is determined by the block’s column index
             int block_col = bsf->col_indices[block_idx];
-            const int_range col_idx = bsf->cols[block_col].range;   // Input slice
+            const int_range col_idx = bsf->cols[block_col].range;   
             const int col_start = col_idx.start;
-            const int N = col_idx.end - col_idx.start + 1;          // Cols in this block-col
+            const int N = col_idx.end - col_idx.start + 1;          
 
             // Dense block
             const matrix_block *blk = &bsf->blocks[block_idx];
-            const int lda = (int)blk->rows;                         // Leading dim (column-major)
+            
+            const int lda = (int)blk->rows;                     
 
             // vec_out[row_start : row_start+M] += A_block * vec_in[col_start : col_start+N]
             cblas_cgemv(CblasColMajor, CblasNoTrans,
@@ -209,3 +210,4 @@ int sparse_matvec(const block_sparse_format *bsf,
 
     return 0;
 }
+

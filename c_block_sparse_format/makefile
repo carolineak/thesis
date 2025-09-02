@@ -3,7 +3,7 @@ CC     = gcc
 CFLAGS = -Wall -Wextra -O2
 
 # Librarys
-LDLIBS = -lopenblas -lm
+LDLIBS = -lopenblas -llapacke -lm
 
 # Sources and objects
 SRCS = block_sparse_format.c main.c

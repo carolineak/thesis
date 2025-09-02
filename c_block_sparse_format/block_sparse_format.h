@@ -9,7 +9,7 @@
 typedef struct {
     size_t rows;    // Number of rows
     size_t cols;    // Number of cols
-    float complex *data;    // Size = rows*cols, column-major'
+    float complex *data;    // Size = rows*cols, column-major
     // NOTE: right now the struct itself doesn’t own the storage for the matrix data — it just has a pointer
 } matrix_block;
 

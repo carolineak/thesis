@@ -3,7 +3,7 @@
 #include <time.h>
 #include <complex.h>
 #include <cblas.h>
-// #include <mkl.h>
+#include <lapacke.h>
 #include <math.h>
 #include "block_sparse_format.h"
 
@@ -46,6 +46,34 @@ static float max_abs_diff(const float complex *a, const float complex *b, int n)
         if (d > m) m = d;
     }
     return m;
+}
+
+// Factor A (row-major, n x n) in place: A = P * L * U
+static int lu_factor_rowmajor(float complex *A, int n, lapack_int *ipiv) {
+    lapack_int info = LAPACKE_cgetrf(LAPACK_ROW_MAJOR, (lapack_int)n, (lapack_int)n,
+                                     (lapack_complex_float*)A, (lapack_int)n, ipiv);
+    return (int)info; // info = 0 success; >0 means singular at U(info,info)
+}
+
+// Print L and U from the compact LU storage
+static void print_lu(const float complex *A, int n) {
+    printf("\nU (upper triangular):\n");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j < i) { printf("   --        "); }
+            else       { printf("(%5.2f,%5.2f) ", crealf(A[i*n + j]), cimagf(A[i*n + j])); }
+        }
+        printf("\n");
+    }
+    printf("\nL (unit lower triangular):\n");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j > i) { printf("   --        "); }
+            else if (i == j) { printf("(%5.2f,%5.2f) ", 1.0f, 0.0f); }
+            else { printf("(%5.2f,%5.2f) ", crealf(A[i*n + j]), cimagf(A[i*n + j])); }
+        }
+        printf("\n");
+    }
 }
 
 int main(void) {
@@ -179,6 +207,27 @@ int main(void) {
                i, crealf(y_bsf[i]),   cimagf(y_bsf[i]));
     }
 
+    // LU factorization of dense matrix
+    // ===================================================================
+    lapack_int *ipiv = (lapack_int*)malloc((size_t)n * sizeof(lapack_int));
+    if (!ipiv) { fprintf(stderr, "Alloc ipiv failed\n"); return 1; }
+
+    int info = lu_factor_rowmajor(dense, n, ipiv);
+    if (info < 0) {
+        fprintf(stderr, "cgetrf: illegal argument %d\n", -info);
+    } else if (info > 0) {
+        fprintf(stderr, "cgetrf: U(%d,%d) is exactly zero (singular)\n", info, info);
+    } else {
+        printf("\nLU factorization successful.\n");
+        // Print L and U
+        print_lu(dense, n);
+
+        // Show pivot indices
+        printf("Pivot indices: ");
+        for (int i = 0; i < n; i++) printf("%d ", (int)ipiv[i]);
+        printf("\n");
+    }
+
     // Cleanup
     // ===================================================================
     bsf_free(&bsf);
@@ -186,5 +235,6 @@ int main(void) {
     free(x);
     free(y_dense);
     free(y_bsf);
+    free(ipiv);
     return 0;
 }
