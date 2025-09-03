@@ -118,4 +118,7 @@ int sparse_matvec(const block_sparse_format *bsf,
                   const float complex *vec_in,  int len_in,
                   float complex *vec_out,       int len_out);
 
+// ==== Compute sparse LU factorization ====
+int sparse_lu(block_sparse_format *bsf);
+
 #endif

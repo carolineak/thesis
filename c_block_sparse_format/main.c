@@ -5,6 +5,7 @@
 #include <cblas.h>
 #include <lapacke.h>
 #include <math.h>
+#include <string.h>
 #include "block_sparse_format.h"
 
 // Random float complex in [0,1] + i[0,1]
@@ -25,7 +26,7 @@ static void copy_block_from_dense(const float complex *dense, int n,
 
 // Helper to compute matvec on dense (row-major) matrix
 // Y = alpha * A * X + beta * Y
-void dense_cgemv_rowmajor(int M, int N,
+void matvec_dense(int M, int N,
                           const float complex *A, // row-major, len M*N
                           const float complex *X, // len N
                           float complex *Y,       // len M
@@ -49,10 +50,13 @@ static float max_abs_diff(const float complex *a, const float complex *b, int n)
 }
 
 // Factor A (row-major, n x n) in place: A = P * L * U
-static int lu_factor_rowmajor(float complex *A, int n, lapack_int *ipiv) {
+// After factorisation, permute rows back to original order using ipiv
+static int lu_dense(float complex *A, int n, lapack_int *ipiv) {
     lapack_int info = LAPACKE_cgetrf(LAPACK_ROW_MAJOR, (lapack_int)n, (lapack_int)n,
                                      (lapack_complex_float*)A, (lapack_int)n, ipiv);
-    return (int)info; // info = 0 success; >0 means singular at U(info,info)
+    if (info != 0) return (int)info;
+
+    return 0;
 }
 
 // Print L and U from the compact LU storage
@@ -60,7 +64,7 @@ static void print_lu(const float complex *A, int n) {
     printf("\nU (upper triangular):\n");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            if (j < i) { printf("   --        "); }
+            if (j < i) { printf("    --        "); }
             else       { printf("(%5.2f,%5.2f) ", crealf(A[i*n + j]), cimagf(A[i*n + j])); }
         }
         printf("\n");
@@ -68,12 +72,69 @@ static void print_lu(const float complex *A, int n) {
     printf("\nL (unit lower triangular):\n");
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            if (j > i) { printf("   --        "); }
+            if (j > i) { printf("    --        "); }
             else if (i == j) { printf("(%5.2f,%5.2f) ", 1.0f, 0.0f); }
             else { printf("(%5.2f,%5.2f) ", crealf(A[i*n + j]), cimagf(A[i*n + j])); }
         }
         printf("\n");
     }
+}
+
+// Print L and U from a bsf matrix after sparse_lu
+static void print_bsf_lu(const block_sparse_format *bsf) {
+    int n = bsf->m; // assuming square
+    float complex *L = (float complex*)calloc((size_t)n * (size_t)n, sizeof(float complex));
+    float complex *U = (float complex*)calloc((size_t)n * (size_t)n, sizeof(float complex));
+    // Fill L and U from blocks
+    for (int bidx = 0; bidx < bsf->num_blocks; bidx++) {
+        const matrix_block *blk = &bsf->blocks[bidx];
+        int row_block = bsf->row_indices[bidx];
+        int col_block = bsf->col_indices[bidx];
+        int row_start = bsf->rows[row_block].range.start;
+        int col_start = bsf->cols[col_block].range.start;
+        for (size_t j = 0; j < blk->cols; j++) {
+            for (size_t i = 0; i < blk->rows; i++) {
+                int global_row = row_start + (int)i;
+                int global_col = col_start + (int)j;
+                if (row_block > col_block) {
+                    // Strictly lower block: belongs to L
+                    L[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                } else if (row_block < col_block) {
+                    // Strictly upper block: belongs to U
+                    U[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                } else {
+                    // Diagonal block: split into L and U
+                    if (global_row > global_col) {
+                        L[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                    } else if (global_row == global_col) {
+                        L[global_row * n + global_col] = 1.0f + 0.0f*I;
+                        U[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                    } else {
+                        U[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                    }
+                }
+            }
+        }
+    }
+    printf("\nU from bsf:\n");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j < i) { printf("    --        "); }
+            else       { printf("(%5.2f,%5.2f) ", crealf(U[i*n + j]), cimagf(U[i*n + j])); }
+        }
+        printf("\n");
+    }
+    printf("\nL from bsf:\n");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j > i) { printf("    --        "); }
+            else if (i == j) { printf("(%5.2f,%5.2f) ", 1.0f, 0.0f); }
+            else { printf("(%5.2f,%5.2f) ", crealf(L[i*n + j]), cimagf(L[i*n + j])); }
+        }
+        printf("\n");
+    }
+    free(L);
+    free(U);
 }
 
 int main(void) {
@@ -187,7 +248,7 @@ int main(void) {
     }
 
     // Compute y_dense = dense * x  (alpha=1, beta=0)
-    dense_cgemv_rowmajor(n, n, dense, x, y_dense, 1.0f + 0.0f*I, 0.0f + 0.0f*I);
+    matvec_dense(n, n, dense, x, y_dense, 1.0f + 0.0f*I, 0.0f + 0.0f*I);
 
     // Compute y_bsf = bsf * x using sparse_matvec
     if (sparse_matvec(&bsf, x, n, y_bsf, n) != 0) {
@@ -207,18 +268,18 @@ int main(void) {
                i, crealf(y_bsf[i]),   cimagf(y_bsf[i]));
     }
 
-    // LU factorization of dense matrix
+    // LU factorisation of dense matrix
     // ===================================================================
     lapack_int *ipiv = (lapack_int*)malloc((size_t)n * sizeof(lapack_int));
     if (!ipiv) { fprintf(stderr, "Alloc ipiv failed\n"); return 1; }
 
-    int info = lu_factor_rowmajor(dense, n, ipiv);
+    int info = lu_dense(dense, n, ipiv);
     if (info < 0) {
         fprintf(stderr, "cgetrf: illegal argument %d\n", -info);
     } else if (info > 0) {
         fprintf(stderr, "cgetrf: U(%d,%d) is exactly zero (singular)\n", info, info);
     } else {
-        printf("\nLU factorization successful.\n");
+        printf("\nLU factorisation successful.\n");
         // Print L and U
         print_lu(dense, n);
 
@@ -227,6 +288,62 @@ int main(void) {
         for (int i = 0; i < n; i++) printf("%d ", (int)ipiv[i]);
         printf("\n");
     }
+
+    // LU factorisation of block sparse matrix
+    // ===================================================================
+    int bsf_lu_status = sparse_lu(&bsf);
+    if (bsf_lu_status != 0) {
+        fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
+    } else {
+        printf("\nsparse_lu (block sparse) factorisation successful.\n");
+    }
+    
+    // Print L and U from the block sparse LU
+    print_bsf_lu(&bsf);
+
+    // Compute difference matrix and its norm
+    // ===================================================================
+    float complex *diff_matrix = (float complex*)calloc(n * n, sizeof(float complex));
+    if (!diff_matrix) {
+        fprintf(stderr, "Alloc diff_matrix failed\n");
+    } else {
+        // Fill diff_matrix with dense LU - block LU for each block
+        for (int blk = 0; blk < bsf.num_blocks; ++blk) {
+            int row_blk = bsf.row_indices[blk];
+            int col_blk = bsf.col_indices[blk];
+            size_t br = bsf.blocks[blk].rows;
+            size_t bc = bsf.blocks[blk].cols;
+            int row_offset = row_blk * b;
+            int col_offset = col_blk * b;
+            for (size_t r = 0; r < br; ++r) {
+                for (size_t c = 0; c < bc; ++c) {
+                    float complex block_val = matrix_block_get(&bsf.blocks[blk], r, c);
+                    float complex dense_val = dense[(row_offset + r) * n + (col_offset + c)];
+                    diff_matrix[(row_offset + r) * n + (col_offset + c)] = dense_val - block_val;
+                }
+            }
+        }
+        // Compute norm2 of diff_matrix and dense
+        float norm_diff = 0.0f, norm_dense = 0.0f;
+        for (int i = 0; i < n * n; ++i) {
+            norm_diff += cabsf(diff_matrix[i]) * cabsf(diff_matrix[i]);
+            norm_dense += cabsf(dense[i]) * cabsf(dense[i]);
+        }
+        norm_diff = sqrtf(norm_diff);
+        norm_dense = sqrtf(norm_dense);
+        float rel_norm = norm_diff / (norm_dense > 0.0f ? norm_dense : 1.0f);
+        printf("\nRelative norm2(diff_matrix) = %.6e\n", rel_norm);
+
+        // print full diff_matrix
+        printf("\nDiff matrix:\n");
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                printf("(%5.2f,%5.2f) ", crealf(diff_matrix[i*n + j]), cimagf(diff_matrix[i*n + j]));
+            }
+            printf("\n");  
+        }
+    }
+
 
     // Cleanup
     // ===================================================================
@@ -238,3 +355,4 @@ int main(void) {
     free(ipiv);
     return 0;
 }
+
