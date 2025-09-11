@@ -6,8 +6,11 @@
 #include <cblas.h>
 #include "block_sparse_format.h"
 
-// ===== Helper functions =====
-// Make a range [start,end]
+// ===========================================================================
+// Helper functions
+// ===========================================================================
+
+// Make a range
 static inline int_range make_range(int start, int end) {
     int_range r;
     r.start = start;
@@ -15,14 +18,13 @@ static inline int_range make_range(int start, int end) {
     return r;
 }
 
-// Length of a range
+// Get length of a range
 static inline int range_length(int_range r) {
     return (r.end >= r.start) ? (r.end - r.start + 1) : 0;
 }
 
 // LU factorisation with pivoting for a matrix_block
 static int matrix_block_lu(matrix_block *blk, lapack_int *ipiv) {
-    // blk->data is column-major, LAPACK expects column-major
     int n = (int)blk->rows;
     int lda = n;
     lapack_int info = LAPACKE_cgetrf(LAPACK_COL_MAJOR, n, n, (lapack_complex_float*)blk->data, lda, ipiv);
@@ -40,7 +42,9 @@ static void matrix_block_trsm(const matrix_block *A, const matrix_block *B, lapa
     // diag: CblasUnit or CblasNonUnit
 
     // Here, we assume A and B are square and of same size
+
     int n = (int)A->rows;
+
     // Apply row swaps to A according to ipiv if present and side == CblasLeft
     if (ipiv && side == CblasLeft) {
         // LAPACK ipiv uses 1-based indices
@@ -62,10 +66,10 @@ static void matrix_block_trsm(const matrix_block *A, const matrix_block *B, lapa
                 B->data, n,
                 A->data, n);
     
-    // For now, we do not reverse row swaps after solve
+    // For now, we do not reverse row swaps after solve, idk if we need that
 }
 
-// Schur complement update (C = C - A*B)
+// Schur complement update (C = C - A * B)
 static void matrix_block_schur_update(matrix_block *C, const matrix_block *A, const matrix_block *B) {
     int m = (int)C->rows;
     int n = (int)C->cols;
@@ -79,6 +83,38 @@ static void matrix_block_schur_update(matrix_block *C, const matrix_block *A, co
                 C->data, m);
 }
 
+
+// Apply P^T to vector in-place
+static void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
+{
+    if (!vec || !ipiv || n <= 0) return;
+
+    // Build permutation p (0-based) by applying the recorded swaps forward.
+    int *p = (int*)malloc((size_t)n * sizeof *p);
+    int *pinv = (int*)malloc((size_t)n * sizeof *pinv);
+    float complex *tmp = (float complex*)malloc((size_t)n * sizeof *tmp);
+    if (!p || !pinv || !tmp) { free(p); free(pinv); free(tmp); return; }
+
+    for (int i = 0; i < n; ++i) p[i] = i;
+
+    for (int i = 0; i < n; ++i) {
+        int j = (int)ipiv[i] - 1; 
+        if (j >= 0 && j < n && j != i) {
+            int t = p[i]; p[i] = p[j]; p[j] = t;
+        }
+    }
+
+    // Invert permutation: pinv[p[i]] = i
+    for (int i = 0; i < n; ++i) pinv[p[i]] = i;
+
+    // Apply P^T: new_vec[i] = old_vec[ pinv[i] ]
+    for (int i = 0; i < n; ++i) tmp[i] = vec[ pinv[i] ];
+    memcpy(vec, tmp, (size_t)n * sizeof *vec);
+
+    free(p); 
+    free(pinv); 
+    free(tmp);
+}
 
 // ===========================================================================
 // Create a block_sparse_format matrix
@@ -224,14 +260,13 @@ int sparse_matvec(const block_sparse_format *bsf,
 {
     // Check sizes match
     if (len_in != bsf->n || len_out != bsf->m) {
-        // Non-compatible sizes
         return -1;
     }
 
     // Set output to zero
     for (int i = 0; i < len_out; ++i) vec_out[i] = 0.0f + 0.0f*I;
 
-    // Constants for accumulation: y_slice = 1*A*x_slice + 1*y_slice
+    // Remember y = alpha * A * x + beta * y
     const float complex alpha = 1.0f + 0.0f*I;
     const float complex beta  = 1.0f + 0.0f*I;
 
@@ -251,9 +286,10 @@ int sparse_matvec(const block_sparse_format *bsf,
             const int col_start = col_idx.start;
             const int N = col_idx.end - col_idx.start + 1;          
 
-            // Dense block
+            // The dense block
             const matrix_block *blk = &bsf->blocks[block_idx];
             
+            // Leading dimension
             const int lda = (int)blk->rows;                     
 
             // vec_out[row_start : row_start+M] += A_block * vec_in[col_start : col_start+N]
@@ -281,15 +317,12 @@ int sparse_matvec(const block_sparse_format *bsf,
 // Returns 0 on success, <0 on error.
 // ==================================================================
 int sparse_lu(block_sparse_format *bsf) {
-    // Only square block matrices supported
+    // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
-    lapack_int **pivots = (lapack_int**)calloc(bsf->num_rows, sizeof(lapack_int*));
-    // NOTE: For now this is a double pointer, because we store separate pivot arrays for each block row
-    // This should perhaps be changed
-    if (!pivots) return -2;
+
     for (int i = 0; i < bsf->num_rows; ++i) {
-        // Find diagonal block index for (i,i)
+        // Find diagonal block index
         int diag_idx = -1;
         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
             int blk = bsf->rows[i].indices[ii];
@@ -298,24 +331,33 @@ int sparse_lu(block_sparse_format *bsf) {
                 break;
             }
         }
-        if (diag_idx < 0) { free(pivots); return -3; }
-        // LU factorize diagonal block
-        pivots[i] = (lapack_int*)malloc(bsf->blocks[diag_idx].rows * sizeof(lapack_int));
-        if (!pivots[i]) { free(pivots); return -4; }
-        int info = matrix_block_lu(&bsf->blocks[diag_idx], pivots[i]);
-        if (info != 0) { free(pivots); return -5; }
-        // Compute L_21 = A_21 U_11^-1
+        if (diag_idx < 0) return -3;
+
+        // Allocate pivot vector for the diagonal block if not already allocated
+        matrix_block *diag_blk = &bsf->blocks[diag_idx];
+        if (!diag_blk->pivot) {
+            diag_blk->pivot = (int*)malloc(diag_blk->rows * sizeof(int));
+            if (!diag_blk->pivot) return -4;
+        }
+
+        // LU factorize diagonal block, store pivots in block's pivot vector
+        int info = matrix_block_lu(diag_blk, diag_blk->pivot);
+        if (info != 0) { return -5; }
+
+        // Compute L_21 = A_21 * U_11^-1
         for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
             int blk_idx = bsf->cols[i].indices[jj];
             if (bsf->row_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-            matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], pivots[i], CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
+            matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
         }
-        // Compute U_12 = L_11^-1 A_12
+
+        // Compute U_12 = L_11^-1 * P^T * A_12
         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
             int blk_idx = bsf->rows[i].indices[ii];
             if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-            matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], pivots[i], CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
+            matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
         }
+
         // Schur complement update
         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
             int U_12_idx = bsf->rows[i].indices[ii];
@@ -338,9 +380,113 @@ int sparse_lu(block_sparse_format *bsf) {
             }
         }
     }
-    // Free pivots
-    for (int i = 0; i < bsf->num_rows; ++i) free(pivots[i]);
-    free(pivots);
     return 0;
 }
 
+// ==================================================================
+// Solve a linear system Ax = b, where A is given in block sparse LU format
+//
+// Arguments
+//   bsf : Block-sparse matrix in LU factorized form
+//   b   : Right-hand side vector, solution is written in place
+//   uplo : 'L' for lower triangular solve, 'U' for upper triangular solve
+//
+// Returns 0 on success, <0 on error.
+// ==================================================================
+int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
+    // Only square block matrices
+    if (bsf->num_rows != bsf->num_cols) return -1;
+    int n = bsf->num_rows;
+
+    // Internal vector x to save original b
+    float complex *x = (float complex*)malloc(bsf->m * sizeof(float complex));
+    if (!x) return -2;
+    memcpy(x, b, bsf->m * sizeof(float complex));
+
+    // Forward solve Ly = b
+    if (uplo == 'L') {
+        for (int i = 0; i < n; ++i) {
+            // Find diagonal block index
+            int diag_idx = -1;
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                int blk = bsf->rows[i].indices[ii];
+                if (bsf->row_indices[blk] == i && bsf->col_indices[blk] == i) {
+                    diag_idx = blk;
+                    break;
+                }
+            }
+            if (diag_idx < 0) return -2;
+
+            // Solve L_ii * x_i = b_i
+            int row_start = bsf->rows[i].range.start;
+            int M = range_length(bsf->rows[i].range);
+            cblas_ctrmm(CblasColMajor, CblasLeft, CblasLower, CblasNoTrans, CblasUnit,
+                M, 1,
+                &(float complex){1.0f+0.0f*I},
+                bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
+                b + row_start, M);
+
+            // Apply inverse pivoting to b 
+            if (bsf->blocks[diag_idx].pivot) {
+                apply_inverse_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            }
+            
+            // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                int blk_idx = bsf->rows[i].indices[ii];
+                if (bsf->col_indices[blk_idx] > i || blk_idx == diag_idx) continue;
+                int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
+                int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
+                cblas_cgemv(CblasColMajor, CblasNoTrans,
+                            M, N,
+                            &(float complex){1.0f+0.0f*I},
+                            bsf->blocks[blk_idx].data, (int)bsf->blocks[blk_idx].rows,
+                            x + col_start, 1,
+                            &(float complex){1.0f+0.0f*I},
+                            b + row_start, 1);
+            }
+        }
+    }
+    // Backward solve Ux = y
+    else if (uplo == 'U') {
+        for (int i = n - 1; i >= 0; --i) {
+            // Find diagonal block 
+            int diag_idx = -1;
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                int blk = bsf->rows[i].indices[ii];
+                if (bsf->row_indices[blk] == i && bsf->col_indices[blk] == i) {
+                    diag_idx = blk;
+                    break;
+                }
+            }
+            if (diag_idx < 0) return -3;
+
+            // Solve U_ii * x_i = y_i
+            int row_start = bsf->rows[i].range.start;
+            int M = range_length(bsf->rows[i].range);
+            cblas_ctrmm(CblasColMajor, CblasLeft, CblasUpper, CblasNoTrans, CblasNonUnit,
+                        M, 1,
+                        &(float complex){1.0f+0.0f*I},
+                        bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
+                        b + row_start, M);
+            
+            // After updating the diagonal block, update the blocks in the same row
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                int blk_idx = bsf->rows[i].indices[ii];
+                if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+                int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
+                int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
+                cblas_cgemv(CblasColMajor, CblasNoTrans,
+                            M, N,
+                            &(float complex){1.0f+0.0f*I},
+                            bsf->blocks[blk_idx].data, (int)bsf->blocks[blk_idx].rows,
+                            x + col_start, 1,
+                            &(float complex){1.0f+0.0f*I}, 
+                            b + row_start, 1);
+            }
+        }
+    } else {
+        return -4; 
+    }
+    return 0;
+}

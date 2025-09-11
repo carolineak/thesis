@@ -133,6 +133,7 @@ static void print_bsf_lu(const block_sparse_format *bsf) {
         }
         printf("\n");
     }
+    printf("\n");
     free(L);
     free(U);
 }
@@ -279,70 +280,75 @@ int main(void) {
     } else if (info > 0) {
         fprintf(stderr, "cgetrf: U(%d,%d) is exactly zero (singular)\n", info, info);
     } else {
-        printf("\nLU factorisation successful.\n");
-        // Print L and U
-        print_lu(dense, n);
-
-        // Show pivot indices
-        printf("Pivot indices: ");
-        for (int i = 0; i < n; i++) printf("%d ", (int)ipiv[i]);
-        printf("\n");
+        printf("\nDense LU factorisation successful.\n");
+        // Print L and U - just comment in to see
+        // print_lu(dense, n);
     }
 
     // LU factorisation of block sparse matrix
     // ===================================================================
+    // In order to check correctness, we would like to solve A*x = b where A is the original matrix and x is some random vector.
+    // We can then solve the same system using the LU factors from the block sparse format and compare the solutions b1 and b2
+
+    // Generate x filled with ones
+    for (int i = 0; i < n; i++) {
+        x[i] = 1.0f + 0.0f*I;
+    }
+
+    // Compute b1 = A*x using sparse_matvec
+    float complex *b1 = (float complex*)malloc((size_t)n * sizeof(float complex));
+    if (!b) { fprintf(stderr, "Alloc b failed\n"); return 1; }
+    if (sparse_matvec(&bsf, x, n, b1, n) != 0) {
+        fprintf(stderr, "sparse_matvec failed\n");
+        return 1;
+    }
+
+    // Now factor the block sparse matrix
     int bsf_lu_status = sparse_lu(&bsf);
     if (bsf_lu_status != 0) {
         fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
     } else {
-        printf("\nsparse_lu (block sparse) factorisation successful.\n");
+        printf("\nBlock sparse LU factorisation successful.\n");
     }
     
-    // Print L and U from the block sparse LU
-    print_bsf_lu(&bsf);
+    // Print L and U from the block sparse LU - just comment in to see
+    // print_bsf_lu(&bsf);   
 
-    // Compute difference matrix and its norm
-    // ===================================================================
-    float complex *diff_matrix = (float complex*)calloc(n * n, sizeof(float complex));
-    if (!diff_matrix) {
-        fprintf(stderr, "Alloc diff_matrix failed\n");
-    } else {
-        // Fill diff_matrix with dense LU - block LU for each block
-        for (int blk = 0; blk < bsf.num_blocks; ++blk) {
-            int row_blk = bsf.row_indices[blk];
-            int col_blk = bsf.col_indices[blk];
-            size_t br = bsf.blocks[blk].rows;
-            size_t bc = bsf.blocks[blk].cols;
-            int row_offset = row_blk * b;
-            int col_offset = col_blk * b;
-            for (size_t r = 0; r < br; ++r) {
-                for (size_t c = 0; c < bc; ++c) {
-                    float complex block_val = matrix_block_get(&bsf.blocks[blk], r, c);
-                    float complex dense_val = dense[(row_offset + r) * n + (col_offset + c)];
-                    diff_matrix[(row_offset + r) * n + (col_offset + c)] = dense_val - block_val;
-                }
-            }
-        }
-        // Compute norm2 of diff_matrix and dense
-        float norm_diff = 0.0f, norm_dense = 0.0f;
-        for (int i = 0; i < n * n; ++i) {
-            norm_diff += cabsf(diff_matrix[i]) * cabsf(diff_matrix[i]);
-            norm_dense += cabsf(dense[i]) * cabsf(dense[i]);
-        }
-        norm_diff = sqrtf(norm_diff);
-        norm_dense = sqrtf(norm_dense);
-        float rel_norm = norm_diff / (norm_dense > 0.0f ? norm_dense : 1.0f);
-        printf("\nRelative norm2(diff_matrix) = %.6e\n", rel_norm);
+    // Save x in b2
+    float complex *b2 = (float complex*)malloc((size_t)n * sizeof(float complex));
+    if (!b2) { fprintf(stderr, "Alloc b2 failed\n"); return 1; }
+    memcpy(b2, x, (size_t)n * sizeof(float complex));
 
-        // print full diff_matrix
-        printf("\nDiff matrix:\n");
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                printf("(%5.2f,%5.2f) ", crealf(diff_matrix[i*n + j]), cimagf(diff_matrix[i*n + j]));
-            }
-            printf("\n");  
-        }
+    // Compute b2 = A*x using sparse_trimul - first on U then on L
+    if (sparse_trimul(&bsf, b2, 'U') != 0) {
+        fprintf(stderr, "sparse_trimul failed\n");
+        return 1;
     }
+    if (sparse_trimul(&bsf, b2, 'L') != 0) {
+        fprintf(stderr, "sparse_trimul failed\n");
+        return 1;
+    }
+
+    printf("\nFirst few entries of b1 and b2:\n");
+    for (int i = 0; i < (n < 8 ? n : 8); i++) {
+        printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+               i, crealf(b1[i]), cimagf(b1[i]),
+               i, crealf(b2[i]), cimagf(b2[i]));
+    }
+
+    // Compare b1 and b2
+    // (||b1 - b2||) / (||b1||) should be small
+    float norm_b1 = 0.0f;
+    for (int i = 0; i < n; i++) norm_b1 += cabsf(b1[i]) * cabsf(b1[i]);
+    norm_b1 = sqrtf(norm_b1);
+    float norm_diff = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float d = cabsf(b1[i] - b2[i]);
+        norm_diff += d * d;
+    }
+    norm_diff = sqrtf(norm_diff);
+    float rel_err = norm_diff / norm_b1;
+    printf("\nRelative error ||b1 - b2|| / ||b1|| = %.6f\n", rel_err);
 
 
     // Cleanup
@@ -353,6 +359,8 @@ int main(void) {
     free(y_dense);
     free(y_bsf);
     free(ipiv);
+    free(b1);
+    free(b2);
     return 0;
 }
 

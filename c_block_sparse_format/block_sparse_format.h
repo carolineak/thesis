@@ -11,6 +11,7 @@ typedef struct {
     size_t cols;    // Number of cols
     float complex *data;    // Size = rows*cols, column-major
     // NOTE: right now the struct itself doesn’t own the storage for the matrix data — it just has a pointer
+    int *pivot;  // Pivot array for LU factorization, NULL if not factorized
 } matrix_block;
 
 // Integer range
@@ -120,5 +121,11 @@ int sparse_matvec(const block_sparse_format *bsf,
 
 // ==== Compute sparse LU factorization ====
 int sparse_lu(block_sparse_format *bsf);
+
+// ==== Compute sparse trimul ====
+int sparse_trimul(const block_sparse_format *bsf,
+                  float complex *b,
+                  char uplo);
+                  
 
 #endif
