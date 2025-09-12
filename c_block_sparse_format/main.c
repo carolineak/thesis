@@ -140,9 +140,14 @@ static void print_bsf_lu(const block_sparse_format *bsf) {
 
 int main(void) {
     // Parameters
-    const int n = 8;   // Matrix size
-    const int b = 2;   // Block size
+    const int n = 100;   // Matrix size
+    const int b = 25;   // Block size
     #define NUM_BLOCKS 8 // Number of blocks
+
+    int print = 1; 
+    // 0 will print nothing
+    // 1 will print only results
+    // 2 will print everything
 
     // Generate matrix with the block structure
     // 1 - 5 -
@@ -201,32 +206,34 @@ int main(void) {
     // Print information for verifying
     // ===================================================================
     // Print dense matrix
-    printf("\nDense matrix (row-major):\n");
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++)
-            printf("(%5.2f,%5.2f) ", crealf(dense[i*n + j]), cimagf(dense[i*n + j]));
-        printf("\n");
-    }
-
-    // Print information about the sparse matrix
-    printf("Global size: %d x %d\n", bsf.m, bsf.n);
-    for (int r = 0; r < bsf.num_rows; r++)
+    if (print >= 2) {
+        printf("\nDense matrix (row-major):\n");
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++)
+                printf("(%5.2f,%5.2f) ", crealf(dense[i*n + j]), cimagf(dense[i*n + j]));
+            printf("\n");
+        }
+        
+        // Print information about the sparse matrix
+        printf("Global size: %d x %d\n", bsf.m, bsf.n);
+        for (int r = 0; r < bsf.num_rows; r++)
         printf("Row slice %d: [%d .. %d]\n", r, bsf.rows[r].range.start, bsf.rows[r].range.end);
-    for (int c = 0; c < bsf.num_cols; c++)
+        for (int c = 0; c < bsf.num_cols; c++)
         printf("Col slice %d: [%d .. %d]\n", c, bsf.cols[c].range.start, bsf.cols[c].range.end);
-
-
-    // Print blocks
-    for (int bidx = 0; bidx < bsf.num_blocks; bidx++) {
-        const matrix_block *Bv = &bsf.blocks[bidx];
-        printf("\nBlock %d at (%d,%d), size %zu x %zu:\n",
-               bidx, bsf.row_indices[bidx], bsf.col_indices[bidx], Bv->rows, Bv->cols);
-        for (size_t i = 0; i < Bv->rows; i++) {
-            for (size_t j = 0; j < Bv->cols; j++)
+        
+        
+        // Print blocks
+        for (int bidx = 0; bidx < bsf.num_blocks; bidx++) {
+            const matrix_block *Bv = &bsf.blocks[bidx];
+            printf("\nBlock %d at (%d,%d), size %zu x %zu:\n",
+                bidx, bsf.row_indices[bidx], bsf.col_indices[bidx], Bv->rows, Bv->cols);
+            for (size_t i = 0; i < Bv->rows; i++) {
+                for (size_t j = 0; j < Bv->cols; j++)
                 printf("(%5.2f,%5.2f) ", 
                     crealf(matrix_block_get(Bv, i, j)), 
                     cimagf(matrix_block_get(Bv, i, j)));
-            printf("\n");
+                    printf("\n");
+            }
         }
     }
 
@@ -259,15 +266,24 @@ int main(void) {
 
     // Compare results
     float err = max_abs_diff(y_dense, y_bsf, n);
-    printf("\nMax |y_dense - y_bsf| = %.6f\n", err);
+    if (print >= 1) printf("\nMax |y_dense - y_bsf| = %.6f\n", err);
+
+    // Compute relative error
+    float norm_y_dense = 0.0f;
+    for (int i = 0; i < n; i++) norm_y_dense += cabsf(y_dense[i]) * cabsf(y_dense[i]);
+    norm_y_dense = sqrtf(norm_y_dense);
+    float rel_err1 = err / norm_y_dense;
+    if (print >= 1) printf("\nRelative error |y_dense - y_bsf| / |y_dense| = %.8f\n", rel_err1);
 
     // Print vectors
-    printf("\nFirst few entries:\n");
-    for (int i = 0; i < (n < 8 ? n : 8); i++) {
-        printf("y_dense[%d] = (%5.2f,%5.2f)   y_bsf[%d] = (%5.2f,%5.2f)\n",
-               i, crealf(y_dense[i]), cimagf(y_dense[i]),
-               i, crealf(y_bsf[i]),   cimagf(y_bsf[i]));
-    }
+    if (print >= 2) {
+        printf("\nFirst few entries:\n");
+        for (int i = 0; i < (n < 8 ? n : 8); i++) {
+            printf("y_dense[%d] = (%5.2f,%5.2f)   y_bsf[%d] = (%5.2f,%5.2f)\n",
+                i, crealf(y_dense[i]), cimagf(y_dense[i]),
+                i, crealf(y_bsf[i]),   cimagf(y_bsf[i]));
+        }
+    }  
 
     // LU factorisation of dense matrix
     // ===================================================================
@@ -280,9 +296,8 @@ int main(void) {
     } else if (info > 0) {
         fprintf(stderr, "cgetrf: U(%d,%d) is exactly zero (singular)\n", info, info);
     } else {
-        printf("\nDense LU factorisation successful.\n");
-        // Print L and U - just comment in to see
-        // print_lu(dense, n);
+        if (print >= 1) printf("\nDense LU factorisation successful.\n");
+        if (print >= 2) print_lu(dense, n);
     }
 
     // LU factorisation of block sparse matrix
@@ -308,11 +323,10 @@ int main(void) {
     if (bsf_lu_status != 0) {
         fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
     } else {
-        printf("\nBlock sparse LU factorisation successful.\n");
+        if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
     }
     
-    // Print L and U from the block sparse LU - just comment in to see
-    // print_bsf_lu(&bsf);   
+    if (print >= 2) print_bsf_lu(&bsf);   
 
     // Save x in b2
     float complex *b2 = (float complex*)malloc((size_t)n * sizeof(float complex));
@@ -329,15 +343,17 @@ int main(void) {
         return 1;
     }
 
-    printf("\nFirst few entries of b1 and b2:\n");
-    for (int i = 0; i < (n < 8 ? n : 8); i++) {
-        printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
-               i, crealf(b1[i]), cimagf(b1[i]),
-               i, crealf(b2[i]), cimagf(b2[i]));
+    if (print >= 2) {
+        printf("\nFirst few entries of b1 and b2:\n");
+        for (int i = 0; i < (n < 8 ? n : 8); i++) {
+            printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+                i, crealf(b1[i]), cimagf(b1[i]),
+                i, crealf(b2[i]), cimagf(b2[i]));
+        }
     }
 
     // Compare b1 and b2
-    // (||b1 - b2||) / (||b1||) should be small
+    // (||b1 - b2||) / (||b1||) should be zero (or very small)
     float norm_b1 = 0.0f;
     for (int i = 0; i < n; i++) norm_b1 += cabsf(b1[i]) * cabsf(b1[i]);
     norm_b1 = sqrtf(norm_b1);
@@ -348,7 +364,7 @@ int main(void) {
     }
     norm_diff = sqrtf(norm_diff);
     float rel_err = norm_diff / norm_b1;
-    printf("\nRelative error ||b1 - b2|| / ||b1|| = %.6f\n", rel_err);
+    if (print >= 1) printf("\nRelative error ||b1 - b2|| / ||b1|| = %.8f\n", rel_err);
 
 
     // Cleanup
