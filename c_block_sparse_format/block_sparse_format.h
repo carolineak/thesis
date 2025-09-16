@@ -12,6 +12,7 @@ typedef struct {
     float complex *data;    // Size = rows*cols, column-major
     // NOTE: right now the struct itself doesn’t own the storage for the matrix data — it just has a pointer
     int *pivot;  // Pivot array for LU factorization, NULL if not factorized
+    int relies_on_fillin; // Flag indicating if the block relies on fill-in (1 = yes, 0 = no)
 } matrix_block;
 
 // Integer range
@@ -107,6 +108,18 @@ static inline void bsf_free(block_sparse_format *bsf) {
     bsf->num_blocks = 0;
 }
 
+// ==== Range helpers ====
+static inline int_range make_range(int start, int end) {
+    int_range r;
+    r.start = start;
+    r.end   = end;
+    return r;
+}
+
+static inline int range_length(int_range r) {
+    return (r.end >= r.start) ? (r.end - r.start + 1) : 0;
+}
+
 // ===== Create block sparse matrix =====
 int create(block_sparse_format *bsf,
            const int *rows,
@@ -121,6 +134,9 @@ int sparse_matvec(const block_sparse_format *bsf,
 
 // ==== Compute sparse LU factorization ====
 int sparse_lu(block_sparse_format *bsf);
+
+// ==== Compute sparse LU factorization with fill-ins ====
+int sparse_lu_with_fill_ins(block_sparse_format *bsf);
 
 // ==== Compute sparse trimul ====
 int sparse_trimul(const block_sparse_format *bsf,

@@ -140,20 +140,28 @@ static void print_bsf_lu(const block_sparse_format *bsf) {
 
 int main(void) {
     // Parameters
-    const int n = 100;   // Matrix size
-    const int b = 25;   // Block size
+    const int n = 8;   // Matrix size
+    const int b = 2;   // Block size
     #define NUM_BLOCKS 8 // Number of blocks
+    block_sparse_format bsf;
 
-    int print = 1; 
+    int print = 2; 
     // 0 will print nothing
     // 1 will print only results
     // 2 will print everything
 
-    // Generate matrix with the block structure
+    int block_structure = 1;
+    // 0: structure that creates no fill-ins
     // 1 - 5 -
     // - 3 6 -
     // 2 4 7 -
     // - - - 8
+
+    // 1: structure that creates fill-ins
+    // 1 - - -
+    // - 2 5 7
+    // - 3 6 -
+    // - 4 - 8
 
     // Create dense matrix and fill it with random complex numbers (single precision)
     // ===================================================================
@@ -161,44 +169,87 @@ int main(void) {
 
     for (int i = 0; i < n*n; i++) dense[i] = crand();
 
-    // Fill zero-blocks
-    // Pattern of zero blocks:
-    // (0,1), (0,3), (1,0), (1,3), (2,3), (3,0), (3,1), (3,2)
-    int zero_blocks[][2] = {
-        {0,1},{0,3},{1,0},{1,3},{2,3},{3,0},{3,1},{3,2}
-    };
-    for (size_t k = 0; k < sizeof(zero_blocks)/sizeof(zero_blocks[0]); k++) {
-        int row_offset = zero_blocks[k][0] * b;
-        int col_offset = zero_blocks[k][1] * b;
-        for (int i = 0; i < b; i++)
-            for (int j = 0; j < b; j++)
-                dense[(row_offset+i)*n + (col_offset+j)] = 0;
-    }
+    // Create block sparse matrix on the chosen structure
+    if (block_structure == 0) {
+        // Pattern of zero blocks:
+        // (0,1), (0,3), (1,0), (1,3), (2,3), (3,0), (3,1), (3,2)
+        int zero_blocks[][2] = {
+            {0,1},{0,3},{1,0},{1,3},{2,3},{3,0},{3,1},{3,2}
+        };
+        for (size_t k = 0; k < sizeof(zero_blocks)/sizeof(zero_blocks[0]); k++) {
+            int row_offset = zero_blocks[k][0] * b;
+            int col_offset = zero_blocks[k][1] * b;
+            for (int i = 0; i < b; i++)
+                for (int j = 0; j < b; j++)
+                    dense[(row_offset+i)*n + (col_offset+j)] = 0;
+        }
 
-    // Generate matrix on the block sparse format
-    // ===================================================================
-    // Get blocks from dense matrix (all are b×b)
-    // 1:(0,0)  2:(2,0)  3:(1,1)  4:(2,1)  5:(0,2)  6:(1,2)  7:(2,2)  8:(3,3)
-    matrix_block values[NUM_BLOCKS];
-    copy_block_from_dense(dense, n, 0*b, 0*b, b, &values[0]); // 1
-    copy_block_from_dense(dense, n, 2*b, 0*b, b, &values[1]); // 2
-    copy_block_from_dense(dense, n, 1*b, 1*b, b, &values[2]); // 3
-    copy_block_from_dense(dense, n, 2*b, 1*b, b, &values[3]); // 4
-    copy_block_from_dense(dense, n, 0*b, 2*b, b, &values[4]); // 5
-    copy_block_from_dense(dense, n, 1*b, 2*b, b, &values[5]); // 6
-    copy_block_from_dense(dense, n, 2*b, 2*b, b, &values[6]); // 7
-    copy_block_from_dense(dense, n, 3*b, 3*b, b, &values[7]); // 8
+        // Get blocks from dense matrix (all are b×b)
+        // 1:(0,0)  2:(2,0)  3:(1,1)  4:(2,1)  5:(0,2)  6:(1,2)  7:(2,2)  8:(3,3)
+        matrix_block values[NUM_BLOCKS];
+        copy_block_from_dense(dense, n, 0*b, 0*b, b, &values[0]); // 1
+        copy_block_from_dense(dense, n, 2*b, 0*b, b, &values[1]); // 2
+        copy_block_from_dense(dense, n, 1*b, 1*b, b, &values[2]); // 3
+        copy_block_from_dense(dense, n, 2*b, 1*b, b, &values[3]); // 4
+        copy_block_from_dense(dense, n, 0*b, 2*b, b, &values[4]); // 5
+        copy_block_from_dense(dense, n, 1*b, 2*b, b, &values[5]); // 6
+        copy_block_from_dense(dense, n, 2*b, 2*b, b, &values[6]); // 7
+        copy_block_from_dense(dense, n, 3*b, 3*b, b, &values[7]); // 8
 
-    // Set block pattern (0-based)
-    int rows[NUM_BLOCKS] = {0, 2, 1, 2, 0, 1, 2, 3};
-    int cols[NUM_BLOCKS] = {0, 0, 1, 1, 2, 2, 2, 3};
+        // Set block pattern (0-based)
+        int rows[NUM_BLOCKS] = {0, 2, 1, 2, 0, 1, 2, 3};
+        int cols[NUM_BLOCKS] = {0, 0, 1, 1, 2, 2, 2, 3};
 
-    // Create sparse matrix
-    block_sparse_format bsf;
-    int status = create(&bsf, rows, cols, values, NUM_BLOCKS);
-    if (status != 0) {
-        fprintf(stderr, "Create() failed: %d\n", status);
-        for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
+        // Create sparse matrix
+        int status = create(&bsf, rows, cols, values, NUM_BLOCKS);
+        if (status != 0) {
+            fprintf(stderr, "Create() failed: %d\n", status);
+            for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
+            free(dense);
+            return 1;
+        }
+
+    } else if (block_structure == 1) {
+        // Pattern of zero blocks:
+        // (0,1), (0,2), (0,3), (1,0), (2,0), (2,3), (3,0), (3,2)
+        int zero_blocks[][2] = {
+            {0,1},{0,2},{0,3},{1,0},{2,0},{2,3},{3,0},{3,2}
+        };
+        for (size_t k = 0; k < sizeof(zero_blocks)/sizeof(zero_blocks[0]); k++) {
+            int row_offset = zero_blocks[k][0] * b;
+            int col_offset = zero_blocks[k][1] * b;
+            for (int i = 0; i < b; i++)
+                for (int j = 0; j < b; j++)
+                    dense[(row_offset+i)*n + (col_offset+j)] = 0;
+        }
+
+        // Get blocks from dense matrix (all are b×b)
+        // 1:(0,0)  2:(1,1)  3:(2,1)  4:(3,1)  5:(1,2)  6:(2,2)  7:(1,3)  8:(3,3)   
+        matrix_block values[NUM_BLOCKS];
+        copy_block_from_dense(dense, n, 0*b, 0*b, b, &values[0]); // 1
+        copy_block_from_dense(dense, n, 1*b, 1*b, b, &values[1]); // 2
+        copy_block_from_dense(dense, n, 2*b, 1*b, b, &values[2]); // 3
+        copy_block_from_dense(dense, n, 3*b, 1*b, b, &values[3]); // 4
+        copy_block_from_dense(dense, n, 1*b, 2*b, b, &values[4]); // 5
+        copy_block_from_dense(dense, n, 2*b, 2*b, b, &values[5]); // 6
+        copy_block_from_dense(dense, n, 1*b, 3*b, b, &values[6]); // 7
+        copy_block_from_dense(dense, n, 3*b, 3*b, b, &values[7]); // 8
+
+        // Set block pattern (0-based)
+        int rows[NUM_BLOCKS] = {0, 1, 2, 3, 1, 2, 1, 3};
+        int cols[NUM_BLOCKS] = {0, 1, 1, 1, 2, 2, 3, 3};
+
+        // Create sparse matrix
+        int status = create(&bsf, rows, cols, values, NUM_BLOCKS);
+        if (status != 0) {
+            fprintf(stderr, "Create() failed: %d\n", status);
+            for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
+            free(dense);
+            return 1;
+        }
+
+    } else {
+        fprintf(stderr, "Invalid block_structure %d\n", block_structure);
         free(dense);
         return 1;
     }
@@ -297,13 +348,13 @@ int main(void) {
         fprintf(stderr, "cgetrf: U(%d,%d) is exactly zero (singular)\n", info, info);
     } else {
         if (print >= 1) printf("\nDense LU factorisation successful.\n");
-        if (print >= 2) print_lu(dense, n);
+        // if (print >= 2) print_lu(dense, n);
     }
 
     // LU factorisation of block sparse matrix
     // ===================================================================
-    // In order to check correctness, we would like to solve A*x = b where A is the original matrix and x is some random vector.
-    // We can then solve the same system using the LU factors from the block sparse format and compare the solutions b1 and b2
+    // In order to check correctness, we would like to compute A*x = b where A is the original matrix and x is some random vector.
+    // We can then compute the same vector using the LU factors from the block sparse format and compare the solutions b1 and b2
 
     // Generate x filled with ones
     for (int i = 0; i < n; i++) {
@@ -319,14 +370,28 @@ int main(void) {
     }
 
     // Now factor the block sparse matrix
-    int bsf_lu_status = sparse_lu(&bsf);
-    if (bsf_lu_status != 0) {
-        fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
+    if (block_structure == 0) {
+        int bsf_lu_status = sparse_lu(&bsf);
+        if (bsf_lu_status != 0) {
+            fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
+        } else {
+            if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
+        }
+    } else if (block_structure == 1) {
+        int bsf_lu_status = sparse_lu_with_fill_ins(&bsf);
+        if (bsf_lu_status != 0) {
+            fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
+        } else {
+            if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
+        }
     } else {
-        if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
+        fprintf(stderr, "Invalid block_structure %d\n", block_structure);
+        free(dense);
+        return 1;
     }
+
     
-    if (print >= 2) print_bsf_lu(&bsf);   
+    // if (print >= 2) print_bsf_lu(&bsf);   
 
     // Save x in b2
     float complex *b2 = (float complex*)malloc((size_t)n * sizeof(float complex));
