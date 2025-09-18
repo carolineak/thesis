@@ -120,12 +120,15 @@ static inline int range_length(int_range r) {
     return (r.end >= r.start) ? (r.end - r.start + 1) : 0;
 }
 
-// ===== Create block sparse matrix =====
+// ==== Create block sparse matrix ====
 int create(block_sparse_format *bsf,
            const int *rows,
            const int *cols,
            const matrix_block *values,
            int num_blocks);
+
+// ==== Print block sparse matrix ====
+void print_bsf(const block_sparse_format *bsf);
 
 // ==== Compute matvec with bsf ====
 int sparse_matvec(const block_sparse_format *bsf,
@@ -136,7 +139,7 @@ int sparse_matvec(const block_sparse_format *bsf,
 int sparse_lu(block_sparse_format *bsf);
 
 // ==== Compute sparse LU factorization with fill-ins ====
-int sparse_lu_with_fill_ins(block_sparse_format *bsf);
+int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matrix);
 
 // ==== Compute sparse trimul ====
 int sparse_trimul(const block_sparse_format *bsf,

@@ -369,6 +369,9 @@ int main(void) {
         return 1;
     }
 
+    float complex *fillin_matrix = (float complex*)calloc((size_t)n * (size_t)n, sizeof(float complex));
+    if (!fillin_matrix) { fprintf(stderr, "Alloc fillin_matrix failed\n"); return 1; }
+
     // Now factor the block sparse matrix
     if (block_structure == 0) {
         int bsf_lu_status = sparse_lu(&bsf);
@@ -378,9 +381,10 @@ int main(void) {
             if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
         }
     } else if (block_structure == 1) {
-        int bsf_lu_status = sparse_lu_with_fill_ins(&bsf);
+        int bsf_lu_status = sparse_lu_with_fill_ins(&bsf, fillin_matrix);
+        // int bsf_lu_status = sparse_lu(&bsf);
         if (bsf_lu_status != 0) {
-            fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
+            fprintf(stderr, "sparse_lu_with_fill_ins failed: %d\n", bsf_lu_status);
         } else {
             if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
         }
@@ -398,22 +402,97 @@ int main(void) {
     if (!b2) { fprintf(stderr, "Alloc b2 failed\n"); return 1; }
     memcpy(b2, x, (size_t)n * sizeof(float complex));
 
-    // Compute b2 = A*x using sparse_trimul - first on U then on L
-    if (sparse_trimul(&bsf, b2, 'U') != 0) {
-        fprintf(stderr, "sparse_trimul failed\n");
-        return 1;
-    }
-    if (sparse_trimul(&bsf, b2, 'L') != 0) {
-        fprintf(stderr, "sparse_trimul failed\n");
-        return 1;
-    }
+    if (block_structure == 0) {
+        // Compute b2 = pLUx using sparse_trimul - first on U then on L
+        if (sparse_trimul(&bsf, b2, 'U') != 0) {
+            fprintf(stderr, "sparse_trimul failed\n");
+            return 1;
+        }
+        if (sparse_trimul(&bsf, b2, 'L') != 0) {
+            fprintf(stderr, "sparse_trimul failed\n");
+            return 1;
+        }
 
-    if (print >= 2) {
-        printf("\nFirst few entries of b1 and b2:\n");
-        for (int i = 0; i < (n < 8 ? n : 8); i++) {
-            printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
-                i, crealf(b1[i]), cimagf(b1[i]),
-                i, crealf(b2[i]), cimagf(b2[i]));
+        if (print >= 2) {
+            printf("\nFirst few entries of b1 and b2:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b1[i]), cimagf(b1[i]),
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
+        }
+    } else if (block_structure == 1) {
+        // Compute b2 = L_sL_dU_dU_sx
+
+        // print b2 before
+        if (print >= 2) {
+            printf("\nb2 before applying LU factors:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
+        }
+
+        // trimul b2 = U_sparse * b2
+        sparse_trimul(&bsf, b2, 'U');
+        if (sparse_trimul(&bsf, b2, 'U') != 0) {
+            fprintf(stderr, "sparse_trimul failed\n");
+            return 1;
+        }
+
+        // print b2 after U_sparse
+        if (print >= 2) {
+            printf("\nb2 after applying U_sparse:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
+        }
+
+        // // trimul b2 = U_dense * b2
+        // cblas_ctrmv(CblasRowMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+        //             (lapack_int)n,
+        //             (const float complex*)fillin_matrix, (lapack_int)n,
+        //             (float complex*)b2, (lapack_int)1);
+
+        // // print b2 after U_dense
+        // if (print >= 2) {
+        //     printf("\nb2 after applying U_dense:\n");
+        //     for (int i = 0; i < (n < 8 ? n : 8); i++) {
+        //         printf("b2[%d] = (%5.2f,%5.2f)\n",
+        //             i, crealf(b2[i]), cimagf(b2[i]));
+        //     }
+        // }
+        
+        // // trimul b2 = L_dense * b2
+        // cblas_ctrmv(CblasRowMajor, CblasLower, CblasNoTrans, CblasUnit,
+        //             (lapack_int)n,
+        //             (const float complex*)fillin_matrix, (lapack_int)n,
+        //             (float complex*)b2, (lapack_int)1);
+
+        // // print b2 after L_dense
+        // if (print >= 2) {
+        //     printf("\nb2 after applying L_dense:\n");
+        //     for (int i = 0; i < (n < 8 ? n : 8); i++) {
+        //         printf("b2[%d] = (%5.2f,%5.2f)\n",
+        //             i, crealf(b2[i]), cimagf(b2[i]));
+        //     }
+        // }        
+
+        // trimul b2 = L_sparse * b2
+        sparse_trimul(&bsf, b2, 'L');
+        if (sparse_trimul(&bsf, b2, 'L') != 0) {
+            fprintf(stderr, "sparse_trimul failed\n");
+            return 1;
+        }
+        
+        // print b2 after L_sparse
+        if (print >= 2) {
+            printf("\nb2 after applying L_sparse:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
         }
     }
 
@@ -430,6 +509,26 @@ int main(void) {
     norm_diff = sqrtf(norm_diff);
     float rel_err = norm_diff / norm_b1;
     if (print >= 1) printf("\nRelative error ||b1 - b2|| / ||b1|| = %.8f\n", rel_err);
+
+    if (print >= 2) {
+        printf("\nFirst few entries of b1 and b2:\n");
+        for (int i = 0; i < (n < 8 ? n : 8); i++) {
+            printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+                i, crealf(b1[i]), cimagf(b1[i]),
+                i, crealf(b2[i]), cimagf(b2[i]));
+        }
+    }
+
+    float complex *test = (float complex*)malloc((size_t)2 * (size_t)2 * sizeof(float complex));
+    test[0] = 0.97f + 0.49f*I;
+    test[1] = 0.77f + 0.29f*I;
+    test[2] = 0.66f + 0.19f*I;
+    test[3] = 0.35f + 0.89f*I;
+
+    lu_dense(test, 2, ipiv);
+    printf("\nTest matrix LU:\n");
+    print_lu(test, 2);
+    free(test);
 
 
     // Cleanup
