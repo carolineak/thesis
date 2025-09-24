@@ -70,38 +70,65 @@ static void matrix_block_schur_update(matrix_block *C, const matrix_block *A, co
                 C->data, m);
 }
 
-
-// Apply P^T to vector in-place
-static void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
+// Apply P to vector in-place (forward row swaps recorded in ipiv)
+void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
 {
     if (!vec || !ipiv || n <= 0) return;
 
-    // Build permutation p (0-based) by applying the recorded swaps forward.
-    int *p = (int*)malloc((size_t)n * sizeof *p);
-    int *pinv = (int*)malloc((size_t)n * sizeof *pinv);
-    float complex *tmp = (float complex*)malloc((size_t)n * sizeof *tmp);
-    if (!p || !pinv || !tmp) { free(p); free(pinv); free(tmp); return; }
-
-    for (int i = 0; i < n; ++i) p[i] = i;
-
     for (int i = 0; i < n; ++i) {
-        int j = (int)ipiv[i] - 1; 
+        int j = (int)ipiv[i] - 1;   // LAPACK ipiv is 1-based
         if (j >= 0 && j < n && j != i) {
-            int t = p[i]; p[i] = p[j]; p[j] = t;
+            float complex t = vec[i];
+            vec[i] = vec[j];
+            vec[j] = t;
         }
     }
-
-    // Invert permutation: pinv[p[i]] = i
-    for (int i = 0; i < n; ++i) pinv[p[i]] = i;
-
-    // Apply P^T: new_vec[i] = old_vec[ pinv[i] ]
-    for (int i = 0; i < n; ++i) tmp[i] = vec[ pinv[i] ];
-    memcpy(vec, tmp, (size_t)n * sizeof *vec);
-
-    free(p); 
-    free(pinv); 
-    free(tmp);
 }
+
+
+// Apply P^T to vector in-place
+void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
+{
+    if (!vec || !ipiv || n <= 0) return;
+
+    for (int i = n - 1; i >= 0; --i) {
+        int j = (int)ipiv[i] - 1;  // LAPACK ipiv is 1-based
+        if (j >= 0 && j < n && j != i) {
+            float complex t = vec[i];
+            vec[i] = vec[j];
+            vec[j] = t;
+        }
+    }
+}
+// {
+//     if (!vec || !ipiv || n <= 0) return;
+
+//     // Build permutation p (0-based) by applying the recorded swaps forward.
+//     int *p = (int*)malloc((size_t)n * sizeof *p);
+//     int *pinv = (int*)malloc((size_t)n * sizeof *pinv);
+//     float complex *tmp = (float complex*)malloc((size_t)n * sizeof *tmp);
+//     if (!p || !pinv || !tmp) { free(p); free(pinv); free(tmp); return; }
+
+//     for (int i = 0; i < n; ++i) p[i] = i;
+
+//     for (int i = 0; i < n; ++i) {
+//         int j = (int)ipiv[i] - 1; 
+//         if (j >= 0 && j < n && j != i) {
+//             int t = p[i]; p[i] = p[j]; p[j] = t;
+//         }
+//     }
+
+//     // Invert permutation: pinv[p[i]] = i
+//     for (int i = 0; i < n; ++i) pinv[p[i]] = i;
+
+//     // Apply P^T: new_vec[i] = old_vec[ pinv[i] ]
+//     for (int i = 0; i < n; ++i) tmp[i] = vec[ pinv[i] ];
+//     memcpy(vec, tmp, (size_t)n * sizeof *vec);
+
+//     free(p); 
+//     free(pinv); 
+//     free(tmp);
+// }
 
 // ===========================================================================
 // Create a block_sparse_format matrix
@@ -273,7 +300,7 @@ void bsf_print_as_dense(const block_sparse_format *bsf) {
     }
 
     // Print dense matrix
-    printf("Block sparse matrix as dense (%d x %d):\n", bsf->m, bsf->n);
+    // printf("Block sparse matrix as dense (%d x %d):\n", bsf->m, bsf->n);
     for (int r = 0; r < bsf->m; ++r) {
         for (int c = 0; c < bsf->n; ++c) {
             printf("(%5.2f,%5.2f) ", crealf(dense[r + c * bsf->m]), cimagf(dense[r + c * bsf->m]));
@@ -423,8 +450,8 @@ int sparse_lu(block_sparse_format *bsf) {
         }
 
         // print bsf after each outer iteration for debugging
-        printf ("Matrix after processing row %d:\n", i);
-        bsf_print_as_dense(bsf);
+        // printf ("Matrix after processing row %d:\n", i);
+        // bsf_print_as_dense(bsf);
     }
     return 0;
 }
@@ -443,7 +470,7 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
 
-    printf ("Running sparse LU with fill-ins...\n");
+    printf ("\nRunning sparse LU with fill-ins...\n");
 
     // Initialise a dense identity matrix with size bsf->m x bsf->n
     // This matrix will in most cases be way to large, but for now it is fine
@@ -471,6 +498,20 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
         }
 
         if ((diag_blk->relies_on_fillin)) {
+            const int_range row_rng = bsf->rows[i].range;
+            const int_range col_rng = bsf->cols[i].range;
+            const int row_start = row_rng.start;
+            const int col_start = col_rng.start;
+            const int M = range_length(row_rng);
+            const int N = range_length(col_rng);
+
+            // Copy block to fill-in matrix
+            for (int c = 0; c < N; ++c) {
+                for (int r = 0; r < M; ++r) {
+                    fillin_matrix[(row_start + r) + (col_start + c)*bsf->m] = diag_blk->data[r + c*M];
+                }
+            } 
+
             // Set diagonal matrix to the identity 
             for (size_t r = 0; r < diag_blk->rows; ++r) {
                 for (size_t c = 0; c < diag_blk->cols; ++c) {
@@ -479,7 +520,6 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
             }
         } else {
             // LU factorize diagonal block, store pivots in block's pivot vector
-            printf ("LU factorizing diagonal block at (%d, %d)\n", i, i);
             int info = matrix_block_lu(diag_blk, diag_blk->pivot);
             if (info != 0) { return -5; }
             
@@ -531,30 +571,18 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
                                 new_blk.data[r + c*M] = fillin_matrix[(row_start + r) + (col_start + c)*bsf->m];
                             }
                         }
-                        printf ("row_idx = %d, col_idx = %d, row_start = %d, col_start = %d, M = %d, N = %d, bsf->m = %d\n", row_idx, col_idx, row_start, col_start, M, N, bsf->m);
-                        printf ("row_start + col_start * bsf->m = %d\n", row_start + col_start * bsf->m);
-                        
-                        // print new block for debugging
-                        printf ("New block at (%d, %d):\n", row_idx, col_idx);
-                        for (int r = 0; r < M; ++r) {
-                            for (int c = 0; c < N; ++c) {
-                                printf ("(%5.2f,%5.2f)", crealf(new_blk.data[r + c*M]), cimagf(new_blk.data[r + c*M])); 
-                            }
-                            printf ("\n");
-                        }
-                        printf ("\n");
 
                         // Perform Schur update on the new block
                         matrix_block_schur_update(&new_blk, &bsf->blocks[L_21_idx], &bsf->blocks[U_12_idx]);
 
                         // Print updated new block for debugging
-                        printf ("Updated new block at (%d, %d):\n", row_idx, col_idx);
-                        for (int r = 0; r < M; ++r) {
-                            for (int c = 0; c < N; ++c) {
-                                printf ("(%5.2f,%5.2f)", crealf(new_blk.data[r + c*M]), cimagf(new_blk.data[r + c*M])); 
-                            }
-                            printf ("\n");
-                        }
+                        // printf ("Updated new block at (%d, %d):\n", row_idx, col_idx);
+                        // for (int r = 0; r < M; ++r) {
+                        //     for (int c = 0; c < N; ++c) {
+                        //         printf ("(%5.2f,%5.2f)", crealf(new_blk.data[r + c*M]), cimagf(new_blk.data[r + c*M])); 
+                        //     }
+                        //     printf ("\n");
+                        // }
 
                         // Copy updated block back to fill-in matrix
                         for (int c = 0; c < N; ++c) {
@@ -567,35 +595,33 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
                         matrix_block_free(&new_blk);
 
                         // Print fillin_matrix for debugging
-                        printf ("Fill-in matrix after adding block at (%d, %d):\n", row_idx, col_idx);
-                        for (int r = 0; r < bsf->m; ++r) {
-                            for (int c = 0; c < bsf->n; ++c) {
-                                printf ("(%5.2f,%5.2f)", crealf(fillin_matrix[r + c*bsf->m]), cimagf(fillin_matrix[r + c*bsf->m])); 
-                            }
-                            printf ("\n");
-                        }
-                        printf ("\n");   
+                        // printf ("Fill-in matrix after adding block at (%d, %d):\n", row_idx, col_idx);
+                        // for (int r = 0; r < bsf->m; ++r) {
+                        //     for (int c = 0; c < bsf->n; ++c) {
+                        //         printf ("(%5.2f,%5.2f)", crealf(fillin_matrix[r + c*bsf->m]), cimagf(fillin_matrix[r + c*bsf->m])); 
+                        //     }
+                        //     printf ("\n");
+                        // }
+                        // printf ("\n");   
 
                         // Now, the blocks in the same row and column as the fill-in block will be affected
                         // These blocks will now rely on the fill-in block for their correct values.
                         // Therefore, we set the variable relies_on_fillin to true for those blocks
                         for (int k = 0; k < num_blocks; ++k) {
-                            printf ("i: %d, k: %d, bsf->row_indices[k]: %d, bsf->col_indices[k]: %d, row_idx: %d, col_idx: %d\n", i, k, bsf->row_indices[k], bsf->col_indices[k], row_idx, col_idx);
                             if ((bsf->row_indices[k] == row_idx && bsf->col_indices[k] > i) ||
                                 (bsf->col_indices[k] == col_idx && bsf->row_indices[k] > i)) {
                                 bsf->blocks[k].relies_on_fillin = 1; // Mark block as relying on fill-in
                             }
                         } 
-                        // TODO!
 
-                        // print list of blocks that rely on fill-ins
-                        printf ("Blocks that rely on fill-ins:\n");
-                        for (int k = 0; k < num_blocks; ++k) {
-                            if (bsf->blocks[k].relies_on_fillin) {
-                                printf ("Block %d at (%d, %d)\n", k, bsf->row_indices[k], bsf->col_indices[k]);
-                            }
-                        }
-                        printf ("\n");
+                        // print list of blocks that rely on fill-ins 
+                        // printf ("Blocks that rely on fill-ins:\n");
+                        // for (int k = 0; k < num_blocks; ++k) {
+                        //     if (bsf->blocks[k].relies_on_fillin) {
+                        //         printf ("Block %d at (%d, %d)\n", k, bsf->row_indices[k], bsf->col_indices[k]);
+                        //     }
+                        // }
+                        // printf ("\n");
 
                         // Move the blocks that rely on fill-ins to the fill-in matrix
                         for (int k = 0; k < num_blocks; ++k) {
@@ -616,14 +642,14 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
                                 }   
 
                                 // Print fillin_matrix for debugging
-                                printf ("Fill-in matrix after adding block at (%d, %d):\n", bsf->row_indices[k], bsf->col_indices[k]);
-                                for (int r = 0; r < bsf->m; ++r) {
-                                    for (int c = 0; c < bsf->n; ++c) {
-                                        printf ("(%5.2f,%5.2f)", crealf(fillin_matrix[r + c*bsf->m]), cimagf(fillin_matrix[r + c*bsf->m])); 
-                                    }
-                                    printf ("\n");
-                                }
-                                printf ("\n");   
+                                // printf ("Fill-in matrix after adding block at (%d, %d):\n", bsf->row_indices[k], bsf->col_indices[k]);
+                                // for (int r = 0; r < bsf->m; ++r) {
+                                //     for (int c = 0; c < bsf->n; ++c) {
+                                //         printf ("(%5.2f,%5.2f)", crealf(fillin_matrix[r + c*bsf->m]), cimagf(fillin_matrix[r + c*bsf->m])); 
+                                //     }
+                                //     printf ("\n");
+                                // }
+                                // printf ("\n");   
                             }
                         }
 
@@ -684,11 +710,11 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                 bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
                 b + row_start, M);
 
-            // Apply inverse pivoting to b 
-            if (bsf->blocks[diag_idx].pivot) {
-                apply_inverse_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
-            }
-            
+            // // Apply pivoting to b 
+            // if (bsf->blocks[diag_idx].pivot) {
+            //     apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            // }
+
             // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
@@ -703,6 +729,12 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                             &(float complex){1.0f+0.0f*I},
                             b + row_start, 1);
             }
+
+            // Apply pivoting to b 
+            if (bsf->blocks[diag_idx].pivot) {
+                apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            }
+            
         }
     }
     // Backward solve Ux = y
@@ -746,5 +778,134 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
     } else {
         return -4; 
     }
+    return 0;
+}
+
+// ===================================================================
+// sparse_identity_test
+//
+// Computes A * I = A for an LU-factorized block-sparse matrix A = L*U.
+// For each column e_j of the identity, applies:
+//   v := U * e_j   then   v := L * v
+// The resulting v is column j of A. Prints the dense A.
+//
+// Returns 0 on success, <0 on error.
+// ===================================================================
+int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
+    // Basic checks
+    if (!bsf) return -1;
+    if (bsf->m != bsf->n) {
+        fprintf(stderr, "sparse_identity_test: Matrix is not square (m=%d, n=%d)\n", bsf->m, bsf->n);
+        return -2;
+    }
+    const int n = bsf->n;
+
+    // Allocate work vector and output dense matrix
+    float complex *v = (float complex*)malloc((size_t)n * sizeof(float complex));
+    if (!v || !A) {
+        free(v); free(A);
+        fprintf(stderr, "sparse_identity_test: Allocation failed\n");
+        return -3;
+    }
+
+    // Build columns of A by applying U then L to each unit basis vector
+    for (int j = 0; j < n; ++j) {
+        // Set v = e_j
+        for (int i = 0; i < n; ++i) v[i] = 0.0f + 0.0f*I;
+        v[j] = 1.0f + 0.0f*I;
+
+        // v := U * v
+        if (sparse_trimul(bsf, v, 'U') != 0) {
+            fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed at column %d\n", j);
+            free(v); free(A);
+            return -4;
+        }
+
+        // v := L * v
+        if (sparse_trimul(bsf, v, 'L') != 0) {
+            fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed at column %d\n", j);
+            free(v); free(A);
+            return -5;
+        }
+
+        // Store as column j of dense A (col-major storage)
+        for (int i = 0; i < n; ++i) {
+            A[j*(size_t)n + i] = v[i];
+        }
+    }
+
+    free(v);
+    return 0;
+}
+
+// ===================================================================
+// sparse_dense_add
+//
+// Compute: sum = Dense + BSF
+//
+// Arguments
+//   bsf   : Block-sparse matrix (m x n)
+//   dense : Input dense matrix (m x n), row-major
+//   sum     : Output dense matrix (m x n), row-major
+//
+// Both dense and sum must be preallocated arrays of size m*n.
+// ===================================================================
+int sparse_dense_add(const block_sparse_format *bsf,
+                     const float complex *dense,
+                     float complex *sum)
+{
+    if (!bsf || !dense || !sum) return -1;
+    const int m = bsf->m;
+    const int n = bsf->n;
+
+    // Step 1: Copy dense into sum
+    memcpy(sum, dense, (size_t)m * (size_t)n * sizeof(float complex));
+
+    // Step 2: Loop over blocks and add them into sum
+    for (int blk = 0; blk < bsf->num_blocks; ++blk) {
+        const matrix_block *B = &bsf->blocks[blk];
+
+        // Get global ranges
+        const int row_start = bsf->rows[ bsf->row_indices[blk] ].range.start;
+        const int col_start = bsf->cols[ bsf->col_indices[blk] ].range.start;
+
+        for (size_t jj = 0; jj < B->cols; ++jj) {
+            for (size_t ii = 0; ii < B->rows; ++ii) {
+                // Block entry (ii,jj), column-major in B
+                float complex val = B->data[ii + jj * (int)B->rows];
+                int gi = row_start + ii;
+                int gj = col_start + jj;
+                sum[gi * n + gj] += val; // row-major
+            }
+        }
+    }
+
+    return 0;
+}
+// ===================================================================
+// sparse_to_dense
+//
+// Turn a bsf into a dense matrix (row-major)
+//
+// Arguments
+//   bsf   : Block-sparse matrix 
+//   dense : Output dense matrix
+//
+// ===================================================================
+int sparse_to_dense(const block_sparse_format *bsf, float complex *dense) {
+    memset(dense, 0, (size_t)bsf->m * (size_t)bsf->n * sizeof(float complex));
+    for (int k = 0; k < bsf->num_blocks; k++) {
+        const int_range row_rng = bsf->rows[bsf->row_indices[k]].range;
+        const int_range col_rng = bsf->cols[bsf->col_indices[k]].range;
+        const int row_start = row_rng.start;
+        const int col_start = col_rng.start;
+        const matrix_block *blk = &bsf->blocks[k];
+        for (size_t j = 0; j < blk->cols; j++) {
+            for (size_t i = 0; i < blk->rows; i++) {
+                dense[(row_start + (int)i) * bsf->n + (col_start + (int)j)] = matrix_block_get(blk, i, j);
+            }
+        }
+    }
+
     return 0;
 }
