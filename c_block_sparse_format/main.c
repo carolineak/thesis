@@ -173,6 +173,62 @@ static void dense_identity_test(int n, float complex *A, float complex *B) {
     free(y);
 }
 
+static void all_factors_identity_test(int n, const block_sparse_format *bsf, float complex *A, float complex *B, int *piv) {
+
+    // Allocate work vectors
+    float complex *v = (float complex*)calloc((size_t)n, sizeof(float complex));
+    float complex *y = (float complex*)calloc((size_t)n, sizeof(float complex));
+
+    // Build columns of B by applying A to each unit basis vector
+    for (int j = 0; j < n; ++j) {
+        // Set v = e_j
+        for (int i = 0; i < n; ++i) v[i] = 0.0f + 0.0f*I;
+        v[j] = 1.0f + 0.0f*I;
+
+        // v := U_s * v
+        if (sparse_trimul(bsf, v, 'U') != 0) {
+            fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed at column %d\n", j);
+            free(v);
+        }
+        
+        // // y := A * v
+        // matvec_dense(n, n, A, v, y, (float complex)1, (float complex)0, CblasColMajor);
+        
+        // for (int i = 0; i < n; i ++) {
+        //     v[i] = y[i];
+        // }
+
+        // v := U_d * v
+        cblas_ctrmv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                    (lapack_int)n,
+                    (const float complex*)A, (lapack_int)n,
+                    (float complex*)v, (lapack_int)1);
+
+        // v := L_d * v
+        cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+            (lapack_int)n,
+            (const float complex*)A, (lapack_int)n,
+            (float complex*)v, (lapack_int)1);
+
+        // b2 = P^T * b2
+        apply_inverse_pivot_to_vector(v, n, piv);
+
+        // v := L_s * v
+        if (sparse_trimul(bsf, v, 'L') != 0) {
+            fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed at column %d\n", j);
+            free(v);
+        }
+
+        // Store as column j of dense A (col-major storage)
+        for (int i = 0; i < n; ++i) {
+            B[j*(size_t)n + i] = v[i];
+        }
+    }
+
+    free(v);
+    free(y);
+}
+
 
 
 
@@ -414,6 +470,9 @@ int main(void) {
     float complex *fillin_matrix = (float complex*)calloc((size_t)n * (size_t)n, sizeof(float complex));
     if (!fillin_matrix) { fprintf(stderr, "Alloc fillin_matrix failed\n"); return 1; }
 
+    int *fill_in_piv = (int*)malloc((size_t)n * sizeof(int));
+    if (!fill_in_piv) { fprintf(stderr, "Alloc fill_in_piv failed\n"); return 1; }
+
     // Now factor the block sparse matrix
     if (block_structure == 0) {
         int bsf_lu_status = sparse_lu(&bsf);
@@ -428,9 +487,7 @@ int main(void) {
             fprintf(stderr, "sparse_lu_with_fill_ins failed: %d\n", bsf_lu_status);
         } else {
             // LU factorise the fill-in matrix
-            int *fill_in_piv = (int*)malloc((size_t)n * sizeof(int));
-            if (!fill_in_piv) { fprintf(stderr, "Alloc fill_in_piv failed\n"); return 1; }
-            // lu_dense(fillin_matrix, n, fill_in_piv);
+            lu_dense(fillin_matrix, n, fill_in_piv);
             if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
         }
     } else {
@@ -533,68 +590,86 @@ int main(void) {
             }
         }
 
-        float complex *A_dense_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
-        dense_identity_test(n, fillin_matrix, A_dense_reconstructed);
+        // float complex *A_dense_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
+        // dense_identity_test(n, fillin_matrix, A_dense_reconstructed);
 
-        printf("\nA dense reconstructed from A_d*I:\n");
+        // printf("\nA dense reconstructed from A_d*I:\n");
+        // for (int i = 0; i < n; ++i) {
+        //     for (int j = 0; j < n; ++j) {
+        //         float complex z = A_dense_reconstructed[j*(size_t)n + i];
+        //         printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
+        //     }
+        //     printf("\n");
+        // }
+
+        float complex *A_all_factors_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
+        all_factors_identity_test(n, &bsf, fillin_matrix, A_all_factors_reconstructed, fill_in_piv);
+
+        printf("\nA reconstructed from L_s*L_d*U_d*U_s*I:\n");
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < n; ++j) {
-                float complex z = A_dense_reconstructed[j*(size_t)n + i];
+                float complex z = A_all_factors_reconstructed[j*(size_t)n + i];
                 printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
             }
             printf("\n");
         }
         
-        float complex *b2_copy = (float complex*)calloc((size_t)n, sizeof(float complex));
-        // Compute b2_copy = fillin_matrix * b2 using cgemv
-        matvec_dense(n, n, fillin_matrix, b2, b2_copy, 1.0f + 0.0f*I, 0.0f + 0.0f*I, CblasColMajor);
+        // float complex *b2_copy = (float complex*)calloc((size_t)n, sizeof(float complex));
+        // // Compute b2_copy = fillin_matrix * b2 using cgemv
+        // matvec_dense(n, n, fillin_matrix, b2, b2_copy, 1.0f + 0.0f*I, 0.0f + 0.0f*I, CblasColMajor);
 
-        // Add b2_copy to b2
-        for (int i = 0; i < n; i++) {
-            b2[i] = b2_copy[i];
-        }
+        // // Add b2_copy to b2
+        // for (int i = 0; i < n; i++) {
+        //     b2[i] = b2_copy[i];
+        // }
           
-        // print b2
-        if (print >= 2) {
-            printf("\nb2 after applying fillin_matrix:\n");
-            for (int i = 0; i < (n < 8 ? n : 8); i++) {
-                printf("b2[%d] = (%5.2f,%5.2f)\n",
-                    i, crealf(b2[i]), cimagf(b2[i]));
-            }
-        }
-
-        // // trimul b2 = U_dense * b2
-        // cblas_ctrmv(CblasRowMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
-        //             (lapack_int)n,
-        //             (const float complex*)fillin_matrix, (lapack_int)n,
-        //             (float complex*)b2, (lapack_int)1);
-
-        // // print b2 after U_dense
+        // // print b2
         // if (print >= 2) {
-        //     printf("\nb2 after applying U_dense:\n");
+        //     printf("\nb2 after applying fillin_matrix:\n");
         //     for (int i = 0; i < (n < 8 ? n : 8); i++) {
         //         printf("b2[%d] = (%5.2f,%5.2f)\n",
         //             i, crealf(b2[i]), cimagf(b2[i]));
         //     }
         // }
 
-        // // trimul b2 = L_dense * b2
-        // cblas_ctrmv(CblasRowMajor, CblasLower, CblasNoTrans, CblasUnit,
-        //     (lapack_int)n,
-        //     (const float complex*)fillin_matrix, (lapack_int)n,
-        //     (float complex*)b2, (lapack_int)1);
-            
-        // // b2 = P^T * b2
-        // apply_inverse_pivot_to_vector(b2, n, ipiv);
+        // trimul b2 = U_dense * b2
+        cblas_ctrmv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                    (lapack_int)n,
+                    (const float complex*)fillin_matrix, (lapack_int)n,
+                    (float complex*)b2, (lapack_int)1);
 
-        // // print b2 after L_dense
-        // if (print >= 2) {
-        //     printf("\nb2 after applying L_dense:\n");
-        //     for (int i = 0; i < (n < 8 ? n : 8); i++) {
-        //         printf("b2[%d] = (%5.2f,%5.2f)\n",
-        //             i, crealf(b2[i]), cimagf(b2[i]));
-        //     }
-        // }        
+        // print b2 after U_dense
+        if (print >= 2) {
+            printf("\nb2 after applying U_dense:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
+        }
+
+        // trimul b2 = L_dense * b2
+        cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+            (lapack_int)n,
+            (const float complex*)fillin_matrix, (lapack_int)n,
+            (float complex*)b2, (lapack_int)1);
+
+        // print fill_in_piv
+        printf("\nfill_in_piv:\n");
+        for (int i = 0; i < n; i++) {
+            printf("fill_in_piv[%d] = %d\n", i, fill_in_piv[i]);
+        }
+            
+        // b2 = P^T * b2
+        apply_inverse_pivot_to_vector(b2, n, fill_in_piv);
+
+        // print b2 after L_dense
+        if (print >= 2) {
+            printf("\nb2 after applying L_dense:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
+        }        
 
         // trimul b2 = L_sparse * b2
         sparse_trimul(&bsf, b2, 'L');
