@@ -1,16 +1,19 @@
 # Compiler and flags
-CC     = gcc
-CFLAGS = -Wall -Wextra -O2
+CC      = gcc
+CFLAGS  = -Wall -Wextra -O2 -MMD -MP
 
-# Librarys
+# Libraries
 LDLIBS = -lopenblas -llapacke -lm
 
 # Sources and objects
-SRCS = block_sparse_format.c main.c
-OBJS = $(SRCS:.c=.o)
+SRCS    = block_sparse_format.c test_matrix.c dense_functions.c check_correctness.c main.c
+OBJS    = $(SRCS:.c=.o)
+DEPS    = $(OBJS:.o=.d)
 
 # Target executable
-TARGET = demo
+TARGET  = demo
+
+.PHONY: all run debug clean
 
 # Default rule
 all: $(TARGET)
@@ -19,9 +22,12 @@ all: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
-# Compile .c to .o
-%.o: %.c block_sparse_format.h
+# Compile .c to .o (auto-generates .d dependency files)
+%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# Include auto-generated dependency files (if present)
+-include $(DEPS)
 
 # Run the demo
 run: $(TARGET)
@@ -33,4 +39,4 @@ debug: clean all
 
 # Cleanup
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET)

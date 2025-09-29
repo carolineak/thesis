@@ -121,6 +121,7 @@ static inline int range_length(int_range r) {
 }
 
 void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
+void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
 
 // ==== Create block sparse matrix ====
 int create(block_sparse_format *bsf,
@@ -130,7 +131,10 @@ int create(block_sparse_format *bsf,
            int num_blocks);
 
 // ==== Print block sparse matrix ====
-void bsf_print_as_dense(const block_sparse_format *bsf);
+void sparse_print_matrix(const block_sparse_format *bsf);
+
+// ==== Print factorised block sparse matrix ====
+void sparse_print_lu(const block_sparse_format *bsf);
 
 // ==== Compute matvec with bsf ====
 int sparse_matvec(const block_sparse_format *bsf,
@@ -149,7 +153,7 @@ int sparse_trimul(const block_sparse_format *bsf,
                   float complex *b,
                   char uplo);
 
-// ==== Test that AI = A ====
+// ==== Test that LUI = A ====
 int sparse_identity_test(const block_sparse_format *bsf, float complex *A);
 
 // Adds a sparse and a dense matrix

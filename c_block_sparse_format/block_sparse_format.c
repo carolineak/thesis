@@ -262,13 +262,13 @@ int create(block_sparse_format *bsf,
 }
 
 // ===================================================================
-// Prints a block sparse matrix as a dense matrix (for debugging)
+// Prints a block sparse matrix as a dense matrix
 // Fill in empty blocks with zeros
 // 
 // Arguments
 //   bsf : Block-sparse matrix
 // ===================================================================  
-void bsf_print_as_dense(const block_sparse_format *bsf) {
+void sparse_print_matrix(const block_sparse_format *bsf) {
     if (!bsf) {
         printf("Block sparse format is NULL\n");
         return;
@@ -309,6 +309,66 @@ void bsf_print_as_dense(const block_sparse_format *bsf) {
     }
 
     free(dense);
+}
+
+// ===================================================================
+// Print L and U from a LU factorised block sparse matrix
+// ===================================================================
+void sparse_print_lu(const block_sparse_format *bsf) {
+    int n = bsf->m; // assuming square
+    float complex *L = (float complex*)calloc((size_t)n * (size_t)n, sizeof(float complex));
+    float complex *U = (float complex*)calloc((size_t)n * (size_t)n, sizeof(float complex));
+    // Fill L and U from blocks
+    for (int bidx = 0; bidx < bsf->num_blocks; bidx++) {
+        const matrix_block *blk = &bsf->blocks[bidx];
+        int row_block = bsf->row_indices[bidx];
+        int col_block = bsf->col_indices[bidx];
+        int row_start = bsf->rows[row_block].range.start;
+        int col_start = bsf->cols[col_block].range.start;
+        for (size_t j = 0; j < blk->cols; j++) {
+            for (size_t i = 0; i < blk->rows; i++) {
+                int global_row = row_start + (int)i;
+                int global_col = col_start + (int)j;
+                if (row_block > col_block) {
+                    // Strictly lower block: belongs to L
+                    L[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                } else if (row_block < col_block) {
+                    // Strictly upper block: belongs to U
+                    U[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                } else {
+                    // Diagonal block: split into L and U
+                    if (global_row > global_col) {
+                        L[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                    } else if (global_row == global_col) {
+                        L[global_row * n + global_col] = 1.0f + 0.0f*I;
+                        U[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                    } else {
+                        U[global_row * n + global_col] = matrix_block_get(blk, i, j);
+                    }
+                }
+            }
+        }
+    }
+    printf("\nU from bsf:\n");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j < i) { printf("    --        "); }
+            else       { printf("(%5.2f,%5.2f) ", crealf(U[i*n + j]), cimagf(U[i*n + j])); }
+        }
+        printf("\n");
+    }
+    printf("\nL from bsf:\n");
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            if (j > i) { printf("    --        "); }
+            else if (i == j) { printf("(%5.2f,%5.2f) ", 1.0f, 0.0f); }
+            else { printf("(%5.2f,%5.2f) ", crealf(L[i*n + j]), cimagf(L[i*n + j])); }
+        }
+        printf("\n");
+    }
+    printf("\n");
+    free(L);
+    free(U);
 }
 
 // ===================================================================
@@ -661,8 +721,8 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fillin_matr
         }
 
         // print bsf after each outer iteration for debugging
-        printf ("Matrix after processing row %d:\n", i);
-        bsf_print_as_dense(bsf);
+        // printf ("Matrix after processing row %d:\n", i);
+        // bsf_print_as_dense(bsf);
     }
     return 0;
 }
@@ -710,10 +770,10 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                 bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
                 b + row_start, M);
 
-            // // Apply pivoting to b 
-            // if (bsf->blocks[diag_idx].pivot) {
-            //     apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
-            // }
+            // Apply pivoting to b 
+            if (bsf->blocks[diag_idx].pivot) {
+                apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            }
 
             // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
@@ -728,11 +788,6 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                             x + col_start, 1,
                             &(float complex){1.0f+0.0f*I},
                             b + row_start, 1);
-            }
-
-            // Apply pivoting to b 
-            if (bsf->blocks[diag_idx].pivot) {
-                apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
             }
             
         }
