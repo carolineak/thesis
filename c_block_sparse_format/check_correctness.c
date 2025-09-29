@@ -69,7 +69,7 @@ void all_factors_identity_test(int n, const block_sparse_format *bsf, float comp
                 (float complex*)v, (lapack_int)1);
                 
             // v := P^T * v
-            apply_pivot_to_vector(v, n, piv);
+            apply_inverse_pivot_to_vector(v, n, piv);
         } else {
             // y := A * v
             dense_matvec(n, n, A, v, y, (float complex)1, (float complex)0, CblasColMajor);
@@ -120,7 +120,7 @@ void all_factors_vector_test(int n, const block_sparse_format *bsf, float comple
             (float complex*)vec_in, (lapack_int)1);
 
         // v := P^T * v
-        apply_pivot_to_vector(vec_in, n, piv);
+        apply_inverse_pivot_to_vector(vec_in, n, piv);
     } else {   
         // y := A_d * v
         dense_matvec(n, n, dense, vec_in, vec_tmp, (float complex)1, (float complex)0, CblasColMajor);
