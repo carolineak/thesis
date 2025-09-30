@@ -10,7 +10,9 @@
 #include "dense_functions.h"
 #include "check_correctness.h"
 
+// ===========================================================================
 // Compute the relative error of two complex vectors
+// ===========================================================================
 double relative_error(const float complex *y_bsf,
                              const float complex *y_dense,
                              int n) {
@@ -35,8 +37,10 @@ double relative_error(const float complex *y_bsf,
     if (denom == 0.0f) return (num == 0.0f) ? 0.0 : INFINITY;
     return (double)num / (double)denom;
 }
-
-void all_factors_identity_test(int n, const block_sparse_format *bsf, float complex *A, 
+// ===========================================================================
+// Computes B = P^TL_sP^TL_dU_dU_sI
+// ===========================================================================
+void sparse_dense_identity_test(int n, const block_sparse_format *bsf, float complex *A, 
                                       float complex *B, int *piv, int lu_factorise_dense) {
 
     // Allocate work vectors
@@ -95,7 +99,11 @@ void all_factors_identity_test(int n, const block_sparse_format *bsf, float comp
     free(y);
 }
 
-void all_factors_vector_test(int n, const block_sparse_format *bsf, float complex *dense, 
+
+// ===========================================================================
+// Computes b = P^TL_sP^TL_dU_dU_sx
+// ===========================================================================
+void sparse_dense_trimul(int n, const block_sparse_format *bsf, float complex *dense, 
                                     float complex *vec_in, complex float *vec_out, int *piv, 
                                     int lu_factorise_dense) {
 

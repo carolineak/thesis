@@ -120,7 +120,9 @@ static inline int range_length(int_range r) {
     return (r.end >= r.start) ? (r.end - r.start + 1) : 0;
 }
 
+// ===? Pivot helpers ====
 void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
+
 void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
 
 // ==== Create block sparse matrix ====
@@ -152,6 +154,9 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf,
 int sparse_trimul(const block_sparse_format *bsf,
                   float complex *b,
                   char uplo);
+
+// ==== Solve Ax = b, where A is block-sparse triangular in LU format ====
+int sparse_trisolve(const block_sparse_format *bsf, float complex *b, char uplo);
 
 // ==== Test that LUI = A ====
 int sparse_identity_test(const block_sparse_format *bsf, float complex *A);

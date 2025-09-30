@@ -8,8 +8,10 @@
 #include <string.h>
 #include "dense_functions.h"
 
-// Helper to compute matvec on dense matrix
+// ===========================================================================
+// Compute matvec on dense matrix
 // Y = alpha * A * X + beta * Y
+// ===========================================================================
 void dense_matvec(int M, int N,
                           const float complex *A, // row-major, len M*N
                           const float complex *X, // len N
@@ -25,8 +27,10 @@ void dense_matvec(int M, int N,
                     &beta, Y, 1);
 }
 
+// ===========================================================================
 // Factor A (col-major, n x n) in place: A = P * L * U
 // After factorisation, permute rows back to original order using ipiv
+// ===========================================================================
 int dense_lu(float complex *A, int n, lapack_int *ipiv) {
     lapack_int info = LAPACKE_cgetrf(LAPACK_COL_MAJOR, (lapack_int)n, (lapack_int)n,
                                      (lapack_complex_float*)A, (lapack_int)n, ipiv);
@@ -35,7 +39,9 @@ int dense_lu(float complex *A, int n, lapack_int *ipiv) {
     return 0;
 }
 
+// ===========================================================================
 // Print L and U from the compact LU storage
+// ===========================================================================
 void dense_print_lu(const float complex *A, int n) {
     printf("\nU (upper triangular):\n");
     for (int i = 0; i < n; i++) {
@@ -55,8 +61,9 @@ void dense_print_lu(const float complex *A, int n) {
         printf("\n");
     }
 }
-
+// ===========================================================================
 // Print a dense matrix
+// ===========================================================================
 void dense_print_matrix(const float complex *A, int n) {
     printf("\nDense matrix (row-major):\n");
     for (int i = 0; i < n; i++) {
@@ -66,7 +73,9 @@ void dense_print_matrix(const float complex *A, int n) {
     }
 }
 
-
+// ===========================================================================
+// Computes B = P^TL_dU_dI
+// ===========================================================================
 void dense_identity_test(int n, float complex *A, float complex *B, int *piv, int lu_factorise_dense) {
 
     // Allocate work vectors

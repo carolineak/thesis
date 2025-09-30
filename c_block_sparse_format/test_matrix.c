@@ -180,7 +180,7 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
 
     } else if (block_structure == 3) {
         // Same sparsity pattern as structure 1, but block sizes vary on each block row/col.
-        const int bsizes[4] = { b, b-(b/2), b, b+(b/2) };
+        const int bsizes[4] = { b+1, b-(b/2), b-1, b+(b/2) };
 
         // Prefix sums for block offsets
         int off[4];

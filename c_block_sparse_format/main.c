@@ -18,7 +18,7 @@ static inline float complex crand(void) {
 
 int main(void) {
     // Parameters
-    const int b = 2;   // Block size
+    const int b = 20;   // Block size
     const int n = b*4;   // Matrix size
     #define NUM_BLOCKS 8 // Number of blocks
     block_sparse_format bsf;
@@ -33,6 +33,7 @@ int main(void) {
     int block_structure = 3;
     // 0: structure that creates no fill-ins
     // 1: structure that creates fill-ins
+    // 2 and 3: structures with varying block sizes per row/col
 
     printf("\nRunning tests on matrix of size %d x %d using block structure no. %d.\n", n, n, block_structure);
 
@@ -192,7 +193,7 @@ int main(void) {
             }
 
             float complex *A_all_factors_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
-            all_factors_identity_test(n, &bsf, fill_in_matrix, A_all_factors_reconstructed, fill_in_piv, lu_factorise_dense);
+            sparse_dense_identity_test(n, &bsf, fill_in_matrix, A_all_factors_reconstructed, fill_in_piv, lu_factorise_dense);
 
             if (lu_factorise_dense) {
                 printf("\nA reconstructed from L_s*L_d*U_d*U_s*I:\n");
@@ -211,7 +212,7 @@ int main(void) {
 
         // Compute b2 = P^TL_sP^TL_dU_dU_sx
         float complex *vec_out = (float complex*)calloc((size_t)n, sizeof(float complex));
-        all_factors_vector_test(n, &bsf, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense);
+        sparse_dense_trimul(n, &bsf, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense);
 
         // Store in b2
         for (int i = 0; i < n; ++i) {
@@ -238,6 +239,19 @@ int main(void) {
         for (int i = 0; i < (n < 12 ? n : 12); i++) {
             printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
                 i, crealf(b1[i]), cimagf(b1[i]),
+                i, crealf(b2[i]), cimagf(b2[i]));
+        }
+    }
+
+    // ===================================================================
+    // Test sparse_trisolve by solving LUx = b
+
+    sparse_trisolve(&bsf, b2, 'L');
+    sparse_trisolve(&bsf, b2, 'U');
+    if (print >= 2) {
+        printf("\nFirst few entries of solution x:\n");
+        for (int i = 0; i < (n < 12 ? n : 12); i++) {
+            printf("x[%d] = (%5.2f,%5.2f)\n",
                 i, crealf(b2[i]), cimagf(b2[i]));
         }
     }

@@ -23,12 +23,6 @@ static void matrix_block_trsm(const matrix_block *A, const matrix_block *B, lapa
     // A: block to be overwritten (solution)
     // B: LU factorized block (diagonal)
     // ipiv: pivot array from LU (optional, can be NULL)
-    // side: CblasLeft or CblasRight
-    // uplo: CblasUpper or CblasLower
-    // trans: CblasNoTrans, CblasTrans, CblasConjTrans
-    // diag: CblasUnit or CblasNonUnit
-
-    // Here, we assume A and B are square and of same size
 
     int m = (int)A->rows;
     int n = (int)A->cols;
@@ -808,6 +802,122 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
     }
     return 0;
 }
+
+// ==================================================================
+// Solve Ax = b, where A is block-sparse triangular in LU format
+//
+// Arguments
+//   bsf  : Block-sparse matrix in LU-factorized form
+//   b    : Right-hand side vector; solution is written in place
+//   uplo : 'L' -> solve L_s * x = b   (forward solve, applies P)
+//           'U' -> solve U   * x = b   (backward solve, no pivots)
+//
+// Returns 0 on success, <0 on error.
+// ==================================================================
+int sparse_trisolve(const block_sparse_format *bsf, float complex *b, char uplo) {
+    // Only square block matrices
+    if (bsf->num_rows != bsf->num_cols) return -1;
+
+    const int n = bsf->num_rows;
+    const float complex one      = 1.0f + 0.0f*I;
+    const float complex minus_one= -1.0f + 0.0f*I;
+
+    if (uplo == 'L') {
+        // Forward solve: L_s * x = b
+        for (int i = 0; i < n; ++i) {
+            const int row_start = bsf->rows[i].range.start;
+            const int M = range_length(bsf->rows[i].range);
+
+            // Subtract contributions from strictly lower blocks in row i:
+            // b_i <- b_i - sum_{j<i} L_{i,j} * x_j
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                const int blk_idx = bsf->rows[i].indices[ii];
+                const int j = bsf->col_indices[blk_idx];
+                if (j >= i) continue; // strictly lower only
+
+                const int col_start = bsf->cols[j].range.start;
+                const int N = range_length(bsf->cols[j].range);
+
+                cblas_cgemv(CblasColMajor, CblasNoTrans,
+                            M, N,
+                            &minus_one,
+                            bsf->blocks[blk_idx].data, (int)bsf->blocks[blk_idx].rows,
+                            b + col_start, 1,
+                            &one,
+                            b + row_start, 1);
+            }
+
+            // Find the diagonal block (i,i)
+            int diag_idx = -1;
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                const int blk = bsf->rows[i].indices[ii];
+                if (bsf->row_indices[blk] == i && bsf->col_indices[blk] == i) {
+                    diag_idx = blk; break;
+                }
+            }
+            if (diag_idx < 0) return -2;
+
+            // Apply pivot P to the RHS slice
+            if (bsf->blocks[diag_idx].pivot) {
+                apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            }
+
+            // Solve L_ii * x_i = b_i   (L_ii is unit-lower inside the LU-packed block)
+            cblas_ctrsv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+                        M,
+                        bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
+                        b + row_start, 1);
+        }
+    }
+    else if (uplo == 'U') {
+        // Backward solve: U * x = b
+        for (int i = n - 1; i >= 0; --i) {
+            const int row_start = bsf->rows[i].range.start;
+            const int M = range_length(bsf->rows[i].range);
+
+            // Subtract contributions from strictly upper blocks in row i:
+            // b_i <- b_i - sum_{j>i} U_{i,j} * x_j
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                const int blk_idx = bsf->rows[i].indices[ii];
+                const int j = bsf->col_indices[blk_idx];
+                if (j <= i) continue; // strictly upper only
+
+                const int col_start = bsf->cols[j].range.start;
+                const int N = range_length(bsf->cols[j].range);
+
+                cblas_cgemv(CblasColMajor, CblasNoTrans,
+                            M, N,
+                            &minus_one,
+                            bsf->blocks[blk_idx].data, (int)bsf->blocks[blk_idx].rows,
+                            b + col_start, 1,
+                            &one,
+                            b + row_start, 1);
+            }
+
+            // Find the diagonal block (i,i)
+            int diag_idx = -1;
+            for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+                const int blk = bsf->rows[i].indices[ii];
+                if (bsf->row_indices[blk] == i && bsf->col_indices[blk] == i) {
+                    diag_idx = blk; break;
+                }
+            }
+            if (diag_idx < 0) return -3;
+
+            // Solve U_ii * x_i = b_i   (U_ii is upper, non-unit)
+            cblas_ctrsv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                        M,
+                        bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
+                        b + row_start, 1);
+        }
+    }
+    else {
+        return -4;
+    }
+
+    return 0;
+}
+
 
 // ===================================================================
 // sparse_identity_test
