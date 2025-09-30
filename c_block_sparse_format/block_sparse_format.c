@@ -30,28 +30,32 @@ static void matrix_block_trsm(const matrix_block *A, const matrix_block *B, lapa
 
     // Here, we assume A and B are square and of same size
 
-    int n = (int)A->rows;
+    int m = (int)A->rows;
+    int n = (int)A->cols;
+    int lda = (int)B->rows;
+    int ldb = (int)A->rows;
 
-    // Apply row swaps to A according to ipiv if present and side == CblasLeft
-    if (ipiv && side == CblasLeft) {
-        // LAPACK ipiv uses 1-based indices
-        for (int i = 0; i < n; ++i) {
-            int piv = ipiv[i] - 1;
+    // Apply pivots ONLY for the Left/Lower (L) step of an LU solve:
+    // This corresponds to B <- P * B before solving L * Y = B.
+    if (ipiv && side == CblasLeft && uplo == CblasLower) {
+        for (int i = 0; i < m; ++i) {
+            int piv = (int)ipiv[i] - 1;   // ipiv is 1-based
             if (piv != i) {
-                // Swap row i and piv in A->data (column-major)
+                // swap row i <-> piv across all N columns (column-major)
                 for (int j = 0; j < n; ++j) {
-                    float complex tmp = A->data[i + n * j];
-                    A->data[i + n * j] = A->data[piv + n * j];
-                    A->data[piv + n * j] = tmp;
+                    float complex tmp = A->data[i   + ldb*j];
+                    A->data[i   + ldb*j] = A->data[piv + ldb*j];
+                    A->data[piv + ldb*j] = tmp;
                 }
             }
         }
     }
+
     // Triangular solve
     cblas_ctrsm(CblasColMajor, side, uplo, trans, diag,
-                n, n, &(float complex){1.0f+0.0f*I},
-                B->data, n,
-                A->data, n);
+                m, n, &(float complex){1.0f+0.0f*I},
+                B->data, lda,
+                A->data, ldb);
     
     // For now, we do not reverse row swaps after solve, idk if we need that
 }
@@ -482,7 +486,7 @@ int sparse_lu(block_sparse_format *bsf) {
 
         // print bsf after each outer iteration for debugging
         // printf ("Matrix after processing row %d:\n", i);
-        // bsf_print_as_dense(bsf);
+        // sparse_print_matrix(bsf);
     }
     return 0;
 }
@@ -691,7 +695,7 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
 
         // print bsf after each outer iteration for debugging
         // printf ("Matrix after processing row %d:\n", i);
-        // bsf_print_as_dense(bsf);
+        // sparse_print_matrix(bsf);
     }
     return 0;
 }

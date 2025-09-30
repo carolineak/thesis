@@ -13,15 +13,18 @@ static inline float complex crand(void) {
     return ((float)rand() / RAND_MAX) + ((float)rand() / RAND_MAX) * I;
 }
 
-// Copy a b×b submatrix from dense (row-major) into a matrix_block (column-major)
+// Copy a (row_len × col_len) submatrix from dense (row-major)
+// into a matrix_block (column-major)
 static void copy_block_from_dense(const float complex *dense, int n,
-                                  int row_offset, int col_offset, int b,
+                                  int row_offset, int col_offset,
+                                  int row_len, int col_len,
                                   matrix_block *out)
 {
-    matrix_block_init(out, (size_t)b, (size_t)b);
-    for (int j = 0; j < b; j++)
-        for (int i = 0; i < b; i++)
-            matrix_block_set(out, (size_t)i, (size_t)j, dense[(row_offset+i)*n + (col_offset+j)]);
+    matrix_block_init(out, (size_t)row_len, (size_t)col_len);
+    for (int j = 0; j < col_len; j++)
+        for (int i = 0; i < row_len; i++)
+            matrix_block_set(out, (size_t)i, (size_t)j,
+                             dense[(row_offset + i) * n + (col_offset + j)]);
 }
 
 
@@ -68,14 +71,14 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
         // Get blocks from dense matrix (all are b×b)
         // 1:(0,0)  2:(2,0)  3:(1,1)  4:(2,1)  5:(0,2)  6:(1,2)  7:(2,2)  8:(3,3)
         matrix_block values[NUM_BLOCKS];
-        copy_block_from_dense(dense, n, 0*b, 0*b, b, &values[0]); // 1
-        copy_block_from_dense(dense, n, 2*b, 0*b, b, &values[1]); // 2
-        copy_block_from_dense(dense, n, 1*b, 1*b, b, &values[2]); // 3
-        copy_block_from_dense(dense, n, 2*b, 1*b, b, &values[3]); // 4
-        copy_block_from_dense(dense, n, 0*b, 2*b, b, &values[4]); // 5
-        copy_block_from_dense(dense, n, 1*b, 2*b, b, &values[5]); // 6
-        copy_block_from_dense(dense, n, 2*b, 2*b, b, &values[6]); // 7
-        copy_block_from_dense(dense, n, 3*b, 3*b, b, &values[7]); // 8
+        copy_block_from_dense(dense, n, 0*b, 0*b, b, b, &values[0]); // 1
+        copy_block_from_dense(dense, n, 2*b, 0*b, b, b, &values[1]); // 2
+        copy_block_from_dense(dense, n, 1*b, 1*b, b, b, &values[2]); // 3
+        copy_block_from_dense(dense, n, 2*b, 1*b, b, b, &values[3]); // 4
+        copy_block_from_dense(dense, n, 0*b, 2*b, b, b, &values[4]); // 5
+        copy_block_from_dense(dense, n, 1*b, 2*b, b, b, &values[5]); // 6
+        copy_block_from_dense(dense, n, 2*b, 2*b, b, b, &values[6]); // 7
+        copy_block_from_dense(dense, n, 3*b, 3*b, b, b, &values[7]); // 8
 
         // Set block pattern (0-based)
         int rows[NUM_BLOCKS] = {0, 2, 1, 2, 0, 1, 2, 3};
@@ -105,22 +108,114 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
         }
 
         // Get blocks from dense matrix (all are b×b)
-        // 1:(0,0)  2:(1,1)  3:(2,1)  4:(3,1)  5:(1,2)  6:(2,2)  7:(1,3)  8:(3,3)   
+        // 1:(0,0)  2:(1,1)  3:(2,1)  4:(3,1)  5:(1,2)  6:(2,2)  7:(1,3)  8:(3,3)
         matrix_block values[NUM_BLOCKS];
-        copy_block_from_dense(dense, n, 0*b, 0*b, b, &values[0]); // 1
-        copy_block_from_dense(dense, n, 1*b, 1*b, b, &values[1]); // 2
-        copy_block_from_dense(dense, n, 2*b, 1*b, b, &values[2]); // 3
-        copy_block_from_dense(dense, n, 3*b, 1*b, b, &values[3]); // 4
-        copy_block_from_dense(dense, n, 1*b, 2*b, b, &values[4]); // 5
-        copy_block_from_dense(dense, n, 2*b, 2*b, b, &values[5]); // 6
-        copy_block_from_dense(dense, n, 1*b, 3*b, b, &values[6]); // 7
-        copy_block_from_dense(dense, n, 3*b, 3*b, b, &values[7]); // 8
+        copy_block_from_dense(dense, n, 0*b, 0*b, b, b, &values[0]); // 1
+        copy_block_from_dense(dense, n, 1*b, 1*b, b, b, &values[1]); // 2
+        copy_block_from_dense(dense, n, 2*b, 1*b, b, b, &values[2]); // 3 
+        copy_block_from_dense(dense, n, 3*b, 1*b, b, b, &values[3]); // 4
+        copy_block_from_dense(dense, n, 1*b, 2*b, b, b, &values[4]); // 5
+        copy_block_from_dense(dense, n, 2*b, 2*b, b, b, &values[5]); // 6
+        copy_block_from_dense(dense, n, 1*b, 3*b, b, b, &values[6]); // 7
+        copy_block_from_dense(dense, n, 3*b, 3*b, b, b, &values[7]); // 8
 
         // Set block pattern (0-based)
         int rows[NUM_BLOCKS] = {0, 1, 2, 3, 1, 2, 1, 3};
         int cols[NUM_BLOCKS] = {0, 1, 1, 1, 2, 2, 3, 3};
 
         // Create sparse matrix
+        int status = create(bsf, rows, cols, values, NUM_BLOCKS);
+        if (status != 0) {
+            fprintf(stderr, "Create() failed: %d\n", status);
+            for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
+            free(dense);
+            return 1;
+        }
+
+    } else if (block_structure == 2) {
+        // Same sparsity pattern as structure 1, but block sizes vary on each block row/col.
+        const int bsizes[4] = { b, b-1, b, b+1 };
+
+        // Prefix sums for block offsets
+        int off[4];
+        off[0] = 0;
+        for (int k = 1; k < 4; ++k) off[k] = off[k-1] + bsizes[k-1];
+
+        // Zero blocks (same coordinates as structure 1):
+        // (0,1), (0,2), (0,3), (1,0), (2,0), (2,3), (3,0), (3,2)
+        int zero_blocks[][2] = {
+            {0,1},{0,2},{0,3},{1,0},{2,0},{2,3},{3,0},{3,2}
+        };
+        for (size_t z = 0; z < sizeof(zero_blocks)/sizeof(zero_blocks[0]); ++z) {
+            int bi = zero_blocks[z][0], bj = zero_blocks[z][1];
+            int r0 = off[bi], c0 = off[bj];
+            int rlen = bsizes[bi], clen = bsizes[bj];
+            for (int j = 0; j < clen; ++j)
+                for (int i = 0; i < rlen; ++i)
+                    dense[(r0 + i) * n + (c0 + j)] = 0;
+        }
+
+        // Nonzero blocks (same order as structure 1)
+        // 1:(0,0)  2:(1,1)  3:(2,1)  4:(3,1)  5:(1,2)  6:(2,2)  7:(1,3)  8:(3,3)
+        matrix_block values[NUM_BLOCKS];
+        copy_block_from_dense(dense, n, off[0], off[0], bsizes[0], bsizes[0], &values[0]); // 1
+        copy_block_from_dense(dense, n, off[1], off[1], bsizes[1], bsizes[1], &values[1]); // 2
+        copy_block_from_dense(dense, n, off[2], off[1], bsizes[2], bsizes[1], &values[2]); // 3
+        copy_block_from_dense(dense, n, off[3], off[1], bsizes[3], bsizes[1], &values[3]); // 4
+        copy_block_from_dense(dense, n, off[1], off[2], bsizes[1], bsizes[2], &values[4]); // 5
+        copy_block_from_dense(dense, n, off[2], off[2], bsizes[2], bsizes[2], &values[5]); // 6
+        copy_block_from_dense(dense, n, off[1], off[3], bsizes[1], bsizes[3], &values[6]); // 7
+        copy_block_from_dense(dense, n, off[3], off[3], bsizes[3], bsizes[3], &values[7]); // 8
+
+        int rows[NUM_BLOCKS] = {0, 1, 2, 3, 1, 2, 1, 3};
+        int cols[NUM_BLOCKS] = {0, 1, 1, 1, 2, 2, 3, 3};
+
+        int status = create(bsf, rows, cols, values, NUM_BLOCKS);
+        if (status != 0) {
+            fprintf(stderr, "Create() failed: %d\n", status);
+            for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
+            free(dense);
+            return 1;
+        }
+
+    } else if (block_structure == 3) {
+        // Same sparsity pattern as structure 1, but block sizes vary on each block row/col.
+        const int bsizes[4] = { b, b-(b/2), b, b+(b/2) };
+
+        // Prefix sums for block offsets
+        int off[4];
+        off[0] = 0;
+        for (int k = 1; k < 4; ++k) off[k] = off[k-1] + bsizes[k-1];
+
+        // Zero blocks (same coordinates as structure 1):
+        // (0,1), (0,2), (0,3), (1,0), (2,0), (2,3), (3,0), (3,2)
+        int zero_blocks[][2] = {
+            {0,1},{0,2},{0,3},{1,0},{2,0},{2,3},{3,0},{3,2}
+        };
+        for (size_t z = 0; z < sizeof(zero_blocks)/sizeof(zero_blocks[0]); ++z) {
+            int bi = zero_blocks[z][0], bj = zero_blocks[z][1];
+            int r0 = off[bi], c0 = off[bj];
+            int rlen = bsizes[bi], clen = bsizes[bj];
+            for (int j = 0; j < clen; ++j)
+                for (int i = 0; i < rlen; ++i)
+                    dense[(r0 + i) * n + (c0 + j)] = 0;
+        }
+
+        // Nonzero blocks (same order as structure 1)
+        // 1:(0,0)  2:(1,1)  3:(2,1)  4:(3,1)  5:(1,2)  6:(2,2)  7:(1,3)  8:(3,3)
+        matrix_block values[NUM_BLOCKS];
+        copy_block_from_dense(dense, n, off[0], off[0], bsizes[0], bsizes[0], &values[0]); // 1
+        copy_block_from_dense(dense, n, off[1], off[1], bsizes[1], bsizes[1], &values[1]); // 2
+        copy_block_from_dense(dense, n, off[2], off[1], bsizes[2], bsizes[1], &values[2]); // 3
+        copy_block_from_dense(dense, n, off[3], off[1], bsizes[3], bsizes[1], &values[3]); // 4
+        copy_block_from_dense(dense, n, off[1], off[2], bsizes[1], bsizes[2], &values[4]); // 5
+        copy_block_from_dense(dense, n, off[2], off[2], bsizes[2], bsizes[2], &values[5]); // 6
+        copy_block_from_dense(dense, n, off[1], off[3], bsizes[1], bsizes[3], &values[6]); // 7
+        copy_block_from_dense(dense, n, off[3], off[3], bsizes[3], bsizes[3], &values[7]); // 8
+
+        int rows[NUM_BLOCKS] = {0, 1, 2, 3, 1, 2, 1, 3};
+        int cols[NUM_BLOCKS] = {0, 1, 1, 1, 2, 2, 3, 3};
+
         int status = create(bsf, rows, cols, values, NUM_BLOCKS);
         if (status != 0) {
             fprintf(stderr, "Create() failed: %d\n", status);

@@ -18,7 +18,7 @@ static inline float complex crand(void) {
 
 int main(void) {
     // Parameters
-    const int b = 25;   // Block size
+    const int b = 2;   // Block size
     const int n = b*4;   // Matrix size
     #define NUM_BLOCKS 8 // Number of blocks
     block_sparse_format bsf;
@@ -27,17 +27,20 @@ int main(void) {
     int print = 1; 
     // 0 will print nothing
     // 1 will print only results
-    // 2 will print everything
+    // 2 will also print matrices and vectors before and after
     // 3 will also print LU decompositions
 
-    int block_structure = 1;
+    int block_structure = 3;
     // 0: structure that creates no fill-ins
     // 1: structure that creates fill-ins
 
+    printf("\nRunning tests on matrix of size %d x %d using block structure no. %d.\n", n, n, block_structure);
 
     // Create a test matrix
     float complex *dense = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
     create_test_matrix(n, b, block_structure, dense, &bsf);
+
+    // print_test_matrix_information(n, dense, &bsf);
 
     if (print >= 2) {
         printf("Matrix before factorisation:\n");
@@ -69,6 +72,8 @@ int main(void) {
     if (sparse_matvec(&bsf, x, n, y_bsf, n) != 0) {
         fprintf(stderr, "sparse_matvec failed\n");
         return 1;
+    } else {
+        if (print >= 1) printf("\nMatrix-vector product succesfully computed.\n");
     }
 
     // Compute relative error
@@ -118,7 +123,7 @@ int main(void) {
         } else {
             if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
         }
-    } else if (block_structure == 1) {
+    } else if (block_structure >= 1) {
         int bsf_lu_status = sparse_lu_with_fill_ins(&bsf, fill_in_matrix);
         if (bsf_lu_status != 0) {
             fprintf(stderr, "sparse_lu_with_fill_ins failed: %d\n", bsf_lu_status);
@@ -152,8 +157,7 @@ int main(void) {
             fprintf(stderr, "sparse_trimul failed\n");
             return 1;
         }
-    } else if (block_structure == 1) {
-
+    } else if (block_structure >= 1) {
         // ======================================================================
         // Identity testing
         if (print >= 2) {
