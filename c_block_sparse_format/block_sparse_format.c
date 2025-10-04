@@ -19,7 +19,7 @@ static int matrix_block_lu(matrix_block *blk, lapack_int *ipiv) {
 }
 
 // Triangular solve with pivoting
-static void matrix_block_trsm(const matrix_block *A, const matrix_block *B, lapack_int *ipiv, int side, int uplo, int trans, int diag) {
+static void matrix_block_trsm(const matrix_block *A, const matrix_block *B, int *ipiv, int side, int uplo, int trans, int diag) {
     // A: block to be overwritten (solution)
     // B: LU factorized block (diagonal)
     // ipiv: pivot array from LU (optional, can be NULL)
@@ -414,10 +414,87 @@ int sparse_matvec(const block_sparse_format *bsf,
 //
 // Returns 0 on success, <0 on error.
 // ==================================================================
+// int sparse_lu(block_sparse_format *bsf) {
+//     // Only square block matrices
+//     if (bsf->num_rows != bsf->num_cols) return -1;
+//     int num_blocks = bsf->num_blocks;
+
+//     for (int i = 0; i < bsf->num_rows; ++i) {
+//         // Find diagonal block index
+//         int diag_idx = -1;
+//         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+//             int blk = bsf->rows[i].indices[ii];
+//             if (bsf->row_indices[blk] == i && bsf->col_indices[blk] == i) {
+//                 diag_idx = blk;
+//                 break;
+//             }
+//         }
+//         if (diag_idx < 0) return -3;
+
+//         // Allocate pivot vector for the diagonal block if not already allocated
+//         matrix_block *diag_blk = &bsf->blocks[diag_idx];
+//         if (!diag_blk->pivot) {
+//             diag_blk->pivot = (int*)malloc(diag_blk->rows * sizeof(int));
+//             if (!diag_blk->pivot) return -4;
+//         }
+
+//         // LU factorize diagonal block, store pivots in block's pivot vector
+//         int info = matrix_block_lu(diag_blk, diag_blk->pivot);
+//         if (info != 0) { return -5; }
+
+//         // Compute L_21 = A_21 * U_11^-1
+//         for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
+//             int blk_idx = bsf->cols[i].indices[jj];
+//             if (bsf->row_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+//             matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
+//         }
+
+//         // Compute U_12 = L_11^-1 * P^T * A_12
+//         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+//             int blk_idx = bsf->rows[i].indices[ii];
+//             if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+//             matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
+//         }
+
+//         // Schur complement update
+//         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+//             int U_12_idx = bsf->rows[i].indices[ii];
+//             if (bsf->col_indices[U_12_idx] <= i || U_12_idx == diag_idx) continue;
+//             for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
+//                 int L_21_idx = bsf->cols[i].indices[jj];
+//                 if (bsf->row_indices[L_21_idx] <= i || L_21_idx == diag_idx) continue;
+//                 // Find intersecting block (A_22)
+//                 int row_idx = bsf->row_indices[L_21_idx];
+//                 int col_idx = bsf->col_indices[U_12_idx];
+//                 int A_22_idx = -1;
+//                 for (int k = 0; k < num_blocks; ++k) {
+//                     if (bsf->row_indices[k] == row_idx && bsf->col_indices[k] == col_idx) {
+//                         A_22_idx = k;
+//                         break;
+//                     }
+//                 }
+//                 if (A_22_idx < 0) continue; // Block not present
+//                 matrix_block_schur_update(&bsf->blocks[A_22_idx], &bsf->blocks[L_21_idx], &bsf->blocks[U_12_idx]);
+//             }
+//         }
+
+//         // print bsf after each outer iteration for debugging
+//         // printf ("Matrix after processing row %d:\n", i);
+//         // sparse_print_matrix(bsf);
+//     }
+//     return 0;
+// }
+
 int sparse_lu(block_sparse_format *bsf) {
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
+
+    // Allocate global pivot vector if not already allocated
+    if (!bsf->global_pivot) {
+        bsf->global_pivot = malloc(bsf->n * sizeof(int));
+        if (!bsf->global_pivot) return -2;
+    }
 
     for (int i = 0; i < bsf->num_rows; ++i) {
         // Find diagonal block index
@@ -431,29 +508,30 @@ int sparse_lu(block_sparse_format *bsf) {
         }
         if (diag_idx < 0) return -3;
 
-        // Allocate pivot vector for the diagonal block if not already allocated
         matrix_block *diag_blk = &bsf->blocks[diag_idx];
-        if (!diag_blk->pivot) {
-            diag_blk->pivot = (int*)malloc(diag_blk->rows * sizeof(int));
-            if (!diag_blk->pivot) return -4;
-        }
 
-        // LU factorize diagonal block, store pivots in block's pivot vector
-        int info = matrix_block_lu(diag_blk, diag_blk->pivot);
+        // Get row range for this block
+        int row_start = bsf->rows[i].range.start;
+
+        // Use the appropriate slice of the global pivot vector
+        int *block_pivot = &bsf->global_pivot[row_start];
+
+        // LU factorize diagonal block, store pivots in the global pivot vector
+        int info = matrix_block_lu(diag_blk, block_pivot);
         if (info != 0) { return -5; }
 
         // Compute L_21 = A_21 * U_11^-1
         for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
             int blk_idx = bsf->cols[i].indices[jj];
             if (bsf->row_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-            matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
+            matrix_block_trsm(&bsf->blocks[blk_idx], diag_blk, block_pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
         }
 
         // Compute U_12 = L_11^-1 * P^T * A_12
         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
             int blk_idx = bsf->rows[i].indices[ii];
             if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-            matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
+            matrix_block_trsm(&bsf->blocks[blk_idx], diag_blk, block_pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
         }
 
         // Schur complement update
@@ -499,6 +577,12 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
 
+    // Allocate global pivot vector if not already allocated
+    if (!bsf->global_pivot) {
+        bsf->global_pivot = malloc(bsf->n * sizeof(int));
+        if (!bsf->global_pivot) return -2;
+    }
+
     // Initialise a dense identity matrix with size bsf->m x bsf->n
     // This matrix will in most cases be way to large, but for now it is fine
     // We will only fill the blocks that we need, the rest will be identity
@@ -517,12 +601,9 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
         }
         if (diag_idx < 0) return -3;
 
-        // Allocate pivot vector for the diagonal block if not already allocated
         matrix_block *diag_blk = &bsf->blocks[diag_idx];
-        if (!diag_blk->pivot) {
-            diag_blk->pivot = (int*)malloc(diag_blk->rows * sizeof(int));
-            if (!diag_blk->pivot) return -4;
-        }
+        int row_start = bsf->rows[i].range.start;
+        int *block_pivot = &bsf->global_pivot[row_start];
 
         if ((diag_blk->relies_on_fillin)) {
             const int_range row_rng = bsf->rows[i].range;
@@ -546,22 +627,22 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
                 }
             }
         } else {
-            // LU factorize diagonal block, store pivots in block's pivot vector
-            int info = matrix_block_lu(diag_blk, diag_blk->pivot);
+            // LU factorize diagonal block, store pivots in global pivot vector
+            int info = matrix_block_lu(diag_blk, block_pivot);
             if (info != 0) { return -5; }
             
             // Compute L_21 = A_21 * U_11^-1
             for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
                 int blk_idx = bsf->cols[i].indices[jj];
                 if (bsf->row_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-                matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
+                matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], block_pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
             }
             
             // Compute U_12 = L_11^-1 * P^T * A_12
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
                 if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-                matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
+                matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], block_pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
             }
             
             // Schur complement update
@@ -726,20 +807,24 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                     break;
                 }
             }
-            if (diag_idx < 0) return -2;
+            if (diag_idx < 0) { free(x); return -2; }
 
-            // Solve L_ii * x_i = b_i
             int row_start = bsf->rows[i].range.start;
             int M = range_length(bsf->rows[i].range);
+
+            // Use the appropriate slice of the global pivot vector
+            int *block_pivot = bsf->global_pivot ? &bsf->global_pivot[row_start] : NULL;
+
+            // Solve L_ii * x_i = b_i
             cblas_ctrmm(CblasColMajor, CblasLeft, CblasLower, CblasNoTrans, CblasUnit,
                 M, 1,
                 &(float complex){1.0f+0.0f*I},
                 bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
                 b + row_start, M);
 
-            // Apply pivoting to b 
-            if (bsf->blocks[diag_idx].pivot) {
-                apply_inverse_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            // Apply pivoting to b using global pivot vector
+            if (block_pivot) {
+                apply_inverse_pivot_to_vector(b + row_start, M, block_pivot);
             }
 
             // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
@@ -756,7 +841,6 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                             &(float complex){1.0f+0.0f*I},
                             b + row_start, 1);
             }
-            
         }
     }
     // Backward solve Ux = y
@@ -771,17 +855,18 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                     break;
                 }
             }
-            if (diag_idx < 0) return -3;
+            if (diag_idx < 0) { free(x); return -3; }
 
-            // Solve U_ii * x_i = y_i
             int row_start = bsf->rows[i].range.start;
             int M = range_length(bsf->rows[i].range);
+
+            // No pivoting for U (upper)
             cblas_ctrmm(CblasColMajor, CblasLeft, CblasUpper, CblasNoTrans, CblasNonUnit,
                         M, 1,
                         &(float complex){1.0f+0.0f*I},
                         bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
                         b + row_start, M);
-            
+
             // After updating the diagonal block, update the blocks in the same row
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
@@ -798,8 +883,10 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
             }
         }
     } else {
+        free(x);
         return -4; 
     }
+    free(x);
     return 0;
 }
 
@@ -857,12 +944,15 @@ int sparse_trisolve(const block_sparse_format *bsf, float complex *b, char uplo)
             }
             if (diag_idx < 0) return -2;
 
+            // Use the appropriate slice of the global pivot vector
+            int *block_pivot = bsf->global_pivot ? &bsf->global_pivot[row_start] : NULL;
+
             // Apply pivot P to the RHS slice
-            if (bsf->blocks[diag_idx].pivot) {
-                apply_pivot_to_vector(b + row_start, M, bsf->blocks[diag_idx].pivot);
+            if (block_pivot) {
+                apply_pivot_to_vector(b + row_start, M, block_pivot);
             }
 
-            // Solve L_ii * x_i = b_i   (L_ii is unit-lower inside the LU-packed block)
+            // Solve L_ii * x_i = b_i 
             cblas_ctrsv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
                         M,
                         bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,
@@ -904,7 +994,7 @@ int sparse_trisolve(const block_sparse_format *bsf, float complex *b, char uplo)
             }
             if (diag_idx < 0) return -3;
 
-            // Solve U_ii * x_i = b_i   (U_ii is upper, non-unit)
+            // Solve U_ii * x_i = b_i  
             cblas_ctrsv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
                         M,
                         bsf->blocks[diag_idx].data, (int)bsf->blocks[diag_idx].rows,

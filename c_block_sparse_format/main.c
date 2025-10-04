@@ -18,7 +18,7 @@ static inline float complex crand(void) {
 
 int main(void) {
     // Parameters
-    const int b = 20;   // Block size
+    const int b = 20;   // Block size, has to be even for structure no. 2 and 3 to work
     const int n = b*4;   // Matrix size
     #define NUM_BLOCKS 8 // Number of blocks
     block_sparse_format bsf;

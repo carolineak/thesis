@@ -11,7 +11,6 @@ typedef struct {
     size_t cols;    // Number of cols
     float complex *data;    // Size = rows*cols, column-major
     // NOTE: right now the struct itself doesn’t own the storage for the matrix data — it just has a pointer
-    int *pivot;  // Pivot array for LU factorization, NULL if not factorized
     int relies_on_fillin; // Flag indicating if the block relies on fill-in (1 = yes, 0 = no)
 } matrix_block;
 
@@ -43,6 +42,8 @@ typedef struct {
 
     int *row_indices;       // Row indices of the blocks
     int *col_indices;       // Column indices of the blocks
+
+    int *global_pivot;      // Global pivot vector for all diagonal blocks
 } block_sparse_format;
 
 // Column-major index (i=row, j=col, 0-based)
@@ -120,7 +121,7 @@ static inline int range_length(int_range r) {
     return (r.end >= r.start) ? (r.end - r.start + 1) : 0;
 }
 
-// ===? Pivot helpers ====
+// ==== Pivot helpers ====
 void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
 
 void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
