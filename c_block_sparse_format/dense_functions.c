@@ -122,3 +122,55 @@ void dense_identity_test(int n, float complex *A, float complex *B, int *piv, in
     free(v);
     free(y);
 }
+
+// ===========================================================================
+// Computes B = P^TL_dU_dI
+// ===========================================================================
+void dense_identity_test2(int n, int A_n, float complex *A, float complex *B, int *piv, int lu_factorise_dense) {
+
+    // Allocate work vectors
+    float complex *v = (float complex*)calloc((size_t)n, sizeof(float complex));
+    float complex *y = (float complex*)calloc((size_t)n, sizeof(float complex));
+
+    int A_start = n - A_n;
+
+    // Build columns of B by applying A to each unit basis vector
+    for (int j = 0; j < n; ++j) {
+        // Set v = e_j
+        for (int i = 0; i < n; ++i) v[i] = 0.0f + 0.0f*I;
+        v[j] = 1.0f + 0.0f*I;
+
+        if (lu_factorise_dense){
+            // v := U_d * v
+            cblas_ctrmv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                        (lapack_int)A_n,
+                        (const float complex*)A, (lapack_int)A_n,
+                        (float complex*)v + A_start, (lapack_int)1);
+    
+            // v := L_d * v
+            cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+                (lapack_int)A_n,
+                (const float complex*)A, (lapack_int)A_n,
+                (float complex*)v + A_start, (lapack_int)1);
+    
+            // v := P^T * v
+            apply_pivot_to_vector(v + A_start, A_n, piv);
+    
+            // Store as column j of dense A (col-major storage)
+            for (int i = 0; i < n; ++i) {
+                B[j*(size_t)n + i] = v[i];
+            }
+        } else {
+            // y := A * v
+            dense_matvec(A_n, A_n, A, v + A_start, y + A_start, (float complex)1, (float complex)0, CblasColMajor);
+
+            // Store as column j of dense A (col-major storage)
+            for (int i = 0; i < n; ++i) {
+                B[j*(size_t)n + i] = y[i];
+            }
+        }
+    }
+
+    free(v);
+    free(y);
+}

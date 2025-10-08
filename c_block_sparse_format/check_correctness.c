@@ -99,6 +99,121 @@ void sparse_dense_identity_test(int n, const block_sparse_format *bsf, float com
     free(y);
 }
 
+// ===========================================================================
+// Computes B = P^TL_sP^TL_dU_dU_sI
+// ===========================================================================
+void sparse_dense_identity_test2(int n, const block_sparse_format *bsf, int A_n, float complex *A, 
+                                      float complex *B, int *piv, int lu_factorise_dense) {
+
+    // Allocate work vectors
+    float complex *v = (float complex*)calloc((size_t)n, sizeof(float complex));
+    float complex *y = (float complex*)calloc((size_t)A_n, sizeof(float complex));
+
+    int A_start = n - A_n;
+
+    // Build columns of B by applying bsf and A to each unit basis vector
+    for (int j = 0; j < n; ++j) {
+        // Set v = e_j
+        for (int i = 0; i < n; ++i) v[i] = 0.0f + 0.0f*I;
+        v[j] = 1.0f + 0.0f*I;
+
+        // v := U_s * v
+        if (sparse_trimul(bsf, v, 'U') != 0) {
+            fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed at column %d\n", j);
+            free(v);
+        }
+        
+        if (lu_factorise_dense) {
+            // v := U_d * v
+            cblas_ctrmv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                (lapack_int)A_n,
+                (const float complex*)A, (lapack_int)A_n,
+                (float complex*)v + A_start, (lapack_int)1);
+                
+            // v := L_d * v
+            cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+                (lapack_int)A_n,
+                (const float complex*)A, (lapack_int)A_n,
+                (float complex*)v + A_start, (lapack_int)1);
+                
+            // v := P^T * v
+            apply_inverse_pivot_to_vector(v + A_start, A_n, piv);
+        } else {
+            // y := A * v
+            dense_matvec(A_n, A_n, A, v + A_start, y, (float complex)1, (float complex)0, CblasColMajor);
+            
+            for (int i = 0; i < A_n; i ++) {
+                v[i + A_start] = y[i];
+            }         
+        }
+
+        // v := L_s * v
+        if (sparse_trimul(bsf, v, 'L') != 0) {
+            fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed at column %d\n", j);
+            free(v);
+        }
+
+        // Store as column j of dense A (col-major storage)
+        for (int i = 0; i < n; ++i) {
+            B[j*(size_t)n + i] = v[i];
+        }
+    }
+
+    free(v);
+    free(y);
+}
+
+// ===========================================================================
+// Computes b = P^TL_sP^TL_dU_dU_sx
+// ===========================================================================
+void sparse_dense_trimul2(int n, const block_sparse_format *bsf, int dense_size, float complex *dense, 
+                                    float complex *vec_in, complex float *vec_out, int *piv, 
+                                    int lu_factorise_dense) {
+
+    float complex *vec_tmp = (float complex*)calloc((size_t)dense_size, sizeof(float complex));
+
+    // v := U_s * v
+    if (sparse_trimul(bsf, vec_in, 'U') != 0) {
+        fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed");
+    }
+
+    int dense_start = n - dense_size;
+
+    if (lu_factorise_dense) {
+        // v := U_d * v
+        cblas_ctrmv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                    (lapack_int)dense_size,
+                    (const float complex*)dense, (lapack_int)dense_size,
+                    (float complex*)vec_in + dense_start, (lapack_int)1);
+
+        // v := L_d * v
+        cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+            (lapack_int)dense_size,
+            (const float complex*)dense, (lapack_int)dense_size,
+            (float complex*)vec_in + dense_start, (lapack_int)1);
+
+        // v := P^T * v
+        apply_inverse_pivot_to_vector(vec_in + dense_start, dense_size, piv);
+
+    } else {   
+        // y := A_d * v
+        dense_matvec(dense_size, dense_size, dense, vec_in + dense_start, vec_tmp, (float complex)1, (float complex)0, CblasColMajor);
+
+        for (int i = 0; i < dense_size; i ++) {
+            vec_in[i + dense_start] = vec_tmp[i];
+        }
+    }
+
+    // v := L_s * v
+    if (sparse_trimul(bsf, vec_in, 'L') != 0) {
+        fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed");
+    }
+
+    // Store in vec_out
+    for (int i = 0; i < n; ++i) {
+        vec_out[i] = vec_in[i];
+    }
+}
 
 // ===========================================================================
 // Computes b = P^TL_sP^TL_dU_dU_sx

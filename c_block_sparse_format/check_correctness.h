@@ -12,6 +12,13 @@ double relative_error(const float complex *y_bsf, const float complex *y_dense, 
 void sparse_dense_identity_test(int n, const block_sparse_format *bsf, float complex *A, 
                                       float complex *B, int *piv, int lu_factorise_dense);
 
+void sparse_dense_identity_test2(int n, const block_sparse_format *bsf, int A_n, float complex *A, 
+                                      float complex *B, int *piv, int lu_factorise_dense);
+
+void sparse_dense_trimul2(int n, const block_sparse_format *bsf, int dense_size, float complex *dense, 
+                                    float complex *vec_in, complex float *vec_out, int *piv, 
+                                    int lu_factorise_dense);                                      
+
 void sparse_dense_trimul(int n, const block_sparse_format *bsf, float complex *dense, 
                                     float complex *vec_in, complex float *vec_out, int *piv, 
                                     int lu_factorise_dense);                                      

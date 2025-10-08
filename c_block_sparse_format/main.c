@@ -18,7 +18,7 @@ static inline float complex crand(void) {
 
 int main(void) {
     // Parameters
-    const int b = 20;   // Block size, has to be even for structure no. 2 and 3 to work
+    const int b = 2;   // Block size, has to be even for structure no. 2 and 3 to work
     const int n = b*4;   // Matrix size
     #define NUM_BLOCKS 8 // Number of blocks
     block_sparse_format bsf;
@@ -30,7 +30,7 @@ int main(void) {
     // 2 will also print matrices and vectors before and after
     // 3 will also print LU decompositions
 
-    int block_structure = 3;
+    int block_structure = 1;
     // 0: structure that creates no fill-ins
     // 1: structure that creates fill-ins
     // 2 and 3: structures with varying block sizes per row/col
@@ -159,6 +159,33 @@ int main(void) {
             return 1;
         }
     } else if (block_structure >= 1) {
+
+        int fill_in_n = 4;
+        float complex *temp_fill_in = (float complex*)malloc((int)fill_in_n * (int)fill_in_n * sizeof(complex float));
+        // move fill_in_matrix(n - fill_in_n to n) over in temp_fill_in. It is stored in column-major order in fill_in_matrix and i want to store it column-major order in temp_fill_in
+        for (int i = 0; i < fill_in_n; i++) {
+            for (int j = 0; j < fill_in_n; j++) {
+                temp_fill_in[i*fill_in_n + j] = fill_in_matrix[(n - fill_in_n + i)*n + (n - fill_in_n + j)];
+            }
+        }
+        int *temp_fill_in_piv = (int*)malloc((int)fill_in_n * sizeof(int));
+        // move the last fill_in_n element from fill_in_piv and subtract offset (n - fill_in_n) from fill_i_piv
+        for (int i = 0; i < fill_in_n; i++) {
+            temp_fill_in_piv[i] = fill_in_piv[n - fill_in_n + i] - (n - fill_in_n);
+        }
+
+        // print temp_fill_in (which is stored in column-major order)
+        if (print >= 2) {
+            printf("\nThe bottom-right %d x %d of the fill-in matrix:\n", fill_in_n, fill_in_n);
+            for (int i = 0; i < fill_in_n; i++) {
+                for (int j = 0; j < fill_in_n; j++) {
+                    printf("(%5.2f,%5.2f) ", crealf(temp_fill_in[j*fill_in_n + i]), cimagf(temp_fill_in[j*fill_in_n + i]));
+                }
+                printf("\n");
+            }
+            printf("\n");
+        }
+
         // ======================================================================
         // Identity testing
         if (print >= 2) {
@@ -177,7 +204,8 @@ int main(void) {
             }
 
             float complex *A_dense_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
-            dense_identity_test(n, fill_in_matrix, A_dense_reconstructed, fill_in_piv, lu_factorise_dense);
+            // dense_identity_test(n, fill_in_matrix, A_dense_reconstructed, fill_in_piv, lu_factorise_dense);
+            dense_identity_test2(n, fill_in_n, temp_fill_in, A_dense_reconstructed, temp_fill_in_piv, lu_factorise_dense);
 
             if (lu_factorise_dense) {
                 printf("\nMatrix reconstructed from L_d*U_d*I:\n");
@@ -193,7 +221,8 @@ int main(void) {
             }
 
             float complex *A_all_factors_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
-            sparse_dense_identity_test(n, &bsf, fill_in_matrix, A_all_factors_reconstructed, fill_in_piv, lu_factorise_dense);
+            // sparse_dense_identity_test(n, &bsf, fill_in_matrix, A_all_factors_reconstructed, fill_in_piv, lu_factorise_dense);
+            sparse_dense_identity_test2(n, &bsf, fill_in_n, temp_fill_in, A_all_factors_reconstructed, temp_fill_in_piv, lu_factorise_dense);
 
             if (lu_factorise_dense) {
                 printf("\nA reconstructed from L_s*L_d*U_d*U_s*I:\n");
@@ -212,7 +241,8 @@ int main(void) {
 
         // Compute b2 = P^TL_sP^TL_dU_dU_sx
         float complex *vec_out = (float complex*)calloc((size_t)n, sizeof(float complex));
-        sparse_dense_trimul(n, &bsf, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense);
+        // sparse_dense_trimul(n, &bsf, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense);
+        sparse_dense_trimul2(n, &bsf, fill_in_n, temp_fill_in, b2, vec_out, temp_fill_in_piv, lu_factorise_dense);
 
         // Store in b2
         for (int i = 0; i < n; ++i) {
