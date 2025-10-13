@@ -405,86 +405,6 @@ int sparse_matvec(const block_sparse_format *bsf,
 }
 
 
-// ==================================================================
-// Sparse LU factorisation of block sparse matrix
-//
-// Arguments
-//   bsf : Block-sparse matrix (column-major blocks), modified in place to contain
-//         the LU factors in its blocks.
-//
-// Returns 0 on success, <0 on error.
-// ==================================================================
-// int sparse_lu(block_sparse_format *bsf) {
-//     // Only square block matrices
-//     if (bsf->num_rows != bsf->num_cols) return -1;
-//     int num_blocks = bsf->num_blocks;
-
-//     for (int i = 0; i < bsf->num_rows; ++i) {
-//         // Find diagonal block index
-//         int diag_idx = -1;
-//         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
-//             int blk = bsf->rows[i].indices[ii];
-//             if (bsf->row_indices[blk] == i && bsf->col_indices[blk] == i) {
-//                 diag_idx = blk;
-//                 break;
-//             }
-//         }
-//         if (diag_idx < 0) return -3;
-
-//         // Allocate pivot vector for the diagonal block if not already allocated
-//         matrix_block *diag_blk = &bsf->blocks[diag_idx];
-//         if (!diag_blk->pivot) {
-//             diag_blk->pivot = (int*)malloc(diag_blk->rows * sizeof(int));
-//             if (!diag_blk->pivot) return -4;
-//         }
-
-//         // LU factorize diagonal block, store pivots in block's pivot vector
-//         int info = matrix_block_lu(diag_blk, diag_blk->pivot);
-//         if (info != 0) { return -5; }
-
-//         // Compute L_21 = A_21 * U_11^-1
-//         for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
-//             int blk_idx = bsf->cols[i].indices[jj];
-//             if (bsf->row_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-//             matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit);
-//         }
-
-//         // Compute U_12 = L_11^-1 * P^T * A_12
-//         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
-//             int blk_idx = bsf->rows[i].indices[ii];
-//             if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
-//             matrix_block_trsm(&bsf->blocks[blk_idx], &bsf->blocks[diag_idx], diag_blk->pivot, CblasLeft, CblasLower, CblasNoTrans, CblasUnit);
-//         }
-
-//         // Schur complement update
-//         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
-//             int U_12_idx = bsf->rows[i].indices[ii];
-//             if (bsf->col_indices[U_12_idx] <= i || U_12_idx == diag_idx) continue;
-//             for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
-//                 int L_21_idx = bsf->cols[i].indices[jj];
-//                 if (bsf->row_indices[L_21_idx] <= i || L_21_idx == diag_idx) continue;
-//                 // Find intersecting block (A_22)
-//                 int row_idx = bsf->row_indices[L_21_idx];
-//                 int col_idx = bsf->col_indices[U_12_idx];
-//                 int A_22_idx = -1;
-//                 for (int k = 0; k < num_blocks; ++k) {
-//                     if (bsf->row_indices[k] == row_idx && bsf->col_indices[k] == col_idx) {
-//                         A_22_idx = k;
-//                         break;
-//                     }
-//                 }
-//                 if (A_22_idx < 0) continue; // Block not present
-//                 matrix_block_schur_update(&bsf->blocks[A_22_idx], &bsf->blocks[L_21_idx], &bsf->blocks[U_12_idx]);
-//             }
-//         }
-
-//         // print bsf after each outer iteration for debugging
-//         // printf ("Matrix after processing row %d:\n", i);
-//         // sparse_print_matrix(bsf);
-//     }
-//     return 0;
-// }
-
 int sparse_lu(block_sparse_format *bsf) {
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
@@ -569,26 +489,128 @@ int sparse_lu(block_sparse_format *bsf) {
 // Arguments
 //   bsf : Block-sparse matrix (column-major blocks), modified in place to contain
 //         the LU factors in its blocks.
+//   fill_in_matrix_out : Pointer to dense matrix to store fill-ins (output)
+//   fill_in_matrix_size_out : Pointer to size of fill-in matrix (output)
 //
 // Returns 0 on success, <0 on error.
 // ==================================================================
-int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_matrix) {
+int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out) {
+
+    if (!bsf || !fill_in_matrix_out) return -1;
+
+    *fill_in_matrix_out = NULL;       
+
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
 
     // Allocate global pivot vector if not already allocated
     if (!bsf->global_pivot) {
-        bsf->global_pivot = malloc(bsf->n * sizeof(int));
+        bsf->global_pivot = calloc(bsf->n, sizeof(int));
         if (!bsf->global_pivot) return -2;
     }
 
-    // Initialise a dense identity matrix with size bsf->m x bsf->n
-    // This matrix will in most cases be way to large, but for now it is fine
-    // We will only fill the blocks that we need, the rest will be identity
-    if (!fill_in_matrix) return -2;
-    for (int i = 0; i < bsf->m; ++i) fill_in_matrix[i + i*bsf->m] = 1.0f + 0.0f*I;
+    // Flag array for keeping track of if row/col received fill-in
+    int *received_fill_in = (int*)malloc((int)bsf->num_rows * sizeof(int));
+    for (int i = 0; i < bsf->num_rows; ++i) received_fill_in[i] = 0;
 
+    // Array for keeping track of start of block
+    int *block_start = (int*)malloc((int)bsf->num_rows * sizeof(int));
+    for (int i = 0; i < bsf->num_rows; ++i) block_start[i] = bsf->rows[i].range.start;
+
+    // ========================================================================
+    // Dry run to get size of fill-in matrix
+    // ========================================================================
+    for (int i = 0; i < bsf->num_rows; ++i) {
+        // Find intersecting blocks when schur updating A_22
+        for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
+            int U_12_idx = bsf->rows[i].indices[ii];
+            if (bsf->col_indices[U_12_idx] <= i) continue;
+            for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
+                int L_21_idx = bsf->cols[i].indices[jj];
+                if (bsf->row_indices[L_21_idx] <= i) continue;
+                int row_idx = bsf->row_indices[L_21_idx];
+                int col_idx = bsf->col_indices[U_12_idx];
+                int A_22_idx = -1;
+                for (int k = 0; k < num_blocks; ++k) {
+                    if (bsf->row_indices[k] == row_idx && bsf->col_indices[k] == col_idx) {
+                        A_22_idx = k;
+                        break;
+                    }
+                }
+                if (A_22_idx < 0) { // Block not present, fill-in will be created and must be moved to dense fill-in matrix
+                    // Set row and col index of fill-in to true in flag array
+                    received_fill_in[row_idx] = 1;
+                    received_fill_in[col_idx] = 1;
+
+                    continue;
+                }
+            }
+        }
+
+        // print bsf after each outer iteration for debugging
+        // printf ("Matrix after processing row %d:\n", i);
+        // sparse_print_matrix(bsf);
+        // for (int j = 1; j < bsf->num_rows; j++) {
+        //     if (received_fill_in[j]) printf("Row/col %d received fill-in\n", j);
+        //     if (block_start[j]) printf("Block in rows/col %d starts at %d\n", j, block_start[j]);
+        // }
+    }
+
+    // ========================================================================
+    // Create fill-in matrix
+    // ========================================================================
+    // Find first true index in received_fill_in and set the element of that index to be the offset
+    int offset = 0;
+    for (int j = 0; j < bsf->num_rows; j++) {
+        if (received_fill_in[j]) {
+            offset = block_start[j];
+            break;
+        }
+    }
+
+    // Number of rows/cols that received fill-in
+    int num_fill_in = 0;
+    for (int j = 0; j < bsf->num_rows; j++) {
+        if (received_fill_in[j]) num_fill_in++;
+    }
+
+    int *fill_in_block_start = (int*)malloc((int)bsf->num_rows * sizeof(int));
+        for (int j = 0; j < bsf->num_rows; j++) {
+            fill_in_block_start[j] = 0;
+            if (received_fill_in[j]) {
+                fill_in_block_start[j] = block_start[j] - offset;
+            }
+        }
+    
+    // print fill_in_block_start for debugging
+    // printf("Fill-in block starts (adjusted by offset %d):\n", offset);
+    // for (int j = 0; j < bsf->num_rows; j++) {
+    //     printf("%d ", fill_in_block_start[j]);
+    // }
+    // printf("\n");
+    
+    // Initialise a dense matrix with the room for the fill-ins
+    int fill_in_matrix_size = 0;
+    for (int j = 1; j < bsf->num_rows; j++) {
+        if (received_fill_in[j]) fill_in_matrix_size += range_length(bsf->rows[j].range);
+    }
+
+    complex float *fill_in_matrix = (float complex*)calloc((int)fill_in_matrix_size * (int)fill_in_matrix_size, sizeof(float complex));
+    if (!fill_in_matrix) return -2;
+
+    // // print fill_in_matrix for debugging
+    // printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
+    // for (int r = 0; r < fill_in_matrix_size; ++r) {
+    //     for (int c = 0; c < fill_in_matrix_size; ++c) {
+    //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
+    //     }
+    //     printf("\n");
+    // }
+
+    // ========================================================================
+    // Computation run with actual-sized fill-in matrix
+    // ========================================================================
     for (int i = 0; i < bsf->num_rows; ++i) {
         // Find diagonal block index
         int diag_idx = -1;
@@ -605,20 +627,27 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
         int row_start = bsf->rows[i].range.start;
         int *block_pivot = &bsf->global_pivot[row_start];
 
-        if ((diag_blk->relies_on_fillin)) {
+        if (received_fill_in[i]) {
             const int_range row_rng = bsf->rows[i].range;
             const int_range col_rng = bsf->cols[i].range;
-            const int row_start = row_rng.start;
-            const int col_start = col_rng.start;
             const int M = range_length(row_rng);
             const int N = range_length(col_rng);
 
             // Copy block to fill-in matrix
             for (int c = 0; c < N; ++c) {
                 for (int r = 0; r < M; ++r) {
-                    fill_in_matrix[(row_start + r) + (col_start + c)*bsf->m] = diag_blk->data[r + c*M];
+                    fill_in_matrix[(fill_in_block_start[i] + r) + (fill_in_block_start[i] + c)*fill_in_matrix_size] = diag_blk->data[r + c*M];
                 }
             } 
+
+            // // print fill_in_matrix for debugging
+            // printf("Fill-in matrix after moving diagonal:\n");
+            // for (int r = 0; r < fill_in_matrix_size; ++r) {
+            //     for (int c = 0; c < fill_in_matrix_size; ++c) {
+            //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
+            //     }
+            //     printf("\n");
+            // }
 
             // Set diagonal matrix to the identity 
             for (size_t r = 0; r < diag_blk->rows; ++r) {
@@ -666,100 +695,94 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
                         // Get row and column ranges
                         const int_range row_rng = bsf->rows[row_idx].range;
                         const int_range col_rng = bsf->cols[col_idx].range;
-                        const int row_start = row_rng.start;
-                        const int col_start = col_rng.start;
                         const int M = range_length(row_rng);
                         const int N = range_length(col_rng);
 
-                        // Create new block in fill-in matrix
+                        // Create new fill-in block
                         matrix_block new_blk;
                         matrix_block_init(&new_blk, M, N);
                         for (int c = 0; c < N; ++c) {
                             for (int r = 0; r < M; ++r) {
-                                new_blk.data[r + c*M] = fill_in_matrix[(row_start + r) + (col_start + c)*bsf->m];
+                                new_blk.data[r + c*M] = fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size];
                             }
                         }
 
                         // Perform Schur update on the new block
                         matrix_block_schur_update(&new_blk, &bsf->blocks[L_21_idx], &bsf->blocks[U_12_idx]);
 
-                        // Print updated new block for debugging
-                        // printf ("Updated new block at (%d, %d):\n", row_idx, col_idx);
-                        // for (int r = 0; r < M; ++r) {
-                        //     for (int c = 0; c < N; ++c) {
-                        //         printf ("(%5.2f,%5.2f)", crealf(new_blk.data[r + c*M]), cimagf(new_blk.data[r + c*M])); 
-                        //     }
-                        //     printf ("\n");
-                        // }
-
                         // Copy updated block back to fill-in matrix
                         for (int c = 0; c < N; ++c) {
                             for (int r = 0; r < M; ++r) {
-                                fill_in_matrix[(row_start + r) + (col_start + c)*bsf->m] = new_blk.data[r + c*M];
+                                fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = new_blk.data[r + c*M];
                             }
                         }
 
+                        // // print fill_in_matrix for debugging
+                        // printf("Fill-in matrix after moving fill-in block %d x %d:\n", row_idx, col_idx);
+                        // for (int r = 0; r < fill_in_matrix_size; ++r) {
+                        //     for (int c = 0; c < fill_in_matrix_size; ++c) {
+                        //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
+                        //     }
+                        //     printf("\n");
+                        // }
+
                         // Free temporary block
                         matrix_block_free(&new_blk);
-
-                        // Print fill_in_matrix for debugging
-                        // printf ("Fill-in matrix after adding block at (%d, %d):\n", row_idx, col_idx);
-                        // for (int r = 0; r < bsf->m; ++r) {
-                        //     for (int c = 0; c < bsf->n; ++c) {
-                        //         printf ("(%5.2f,%5.2f)", crealf(fill_in_matrix[r + c*bsf->m]), cimagf(fill_in_matrix[r + c*bsf->m])); 
-                        //     }
-                        //     printf ("\n");
-                        // }
-                        // printf ("\n");   
 
                         // Now, the blocks in the same row and column as the fill-in block will be affected
                         // These blocks will now rely on the fill-in block for their correct values.
                         // Therefore, we set the variable relies_on_fillin to true for those blocks
                         for (int k = 0; k < num_blocks; ++k) {
-                            if ((bsf->row_indices[k] == row_idx && bsf->col_indices[k] > i) ||
-                                (bsf->col_indices[k] == col_idx && bsf->row_indices[k] > i)) {
-                                bsf->blocks[k].relies_on_fillin = 1; // Mark block as relying on fill-in
-                            }
-                        } 
+                            if (bsf->row_indices[k] == row_idx && bsf->col_indices[k] > i) {
+                                // Blocks in same row
 
-                        // print list of blocks that rely on fill-ins 
-                        // printf ("Blocks that rely on fill-ins:\n");
-                        // for (int k = 0; k < num_blocks; ++k) {
-                        //     if (bsf->blocks[k].relies_on_fillin) {
-                        //         printf ("Block %d at (%d, %d)\n", k, bsf->row_indices[k], bsf->col_indices[k]);
-                        //     }
-                        // }
-                        // printf ("\n");
-
-                        // Move the blocks that rely on fill-ins to the fill-in matrix
-                        for (int k = 0; k < num_blocks; ++k) {
-                            if (bsf->blocks[k].relies_on_fillin) {
-                                // Get row and column ranges
+                                //  Get row and column ranges
                                 const int_range row_rng = bsf->rows[bsf->row_indices[k]].range;
                                 const int_range col_rng = bsf->cols[bsf->col_indices[k]].range;
-                                const int row_start = row_rng.start;
-                                const int col_start = col_rng.start;
                                 const int M = range_length(row_rng);
                                 const int N = range_length(col_rng);    
 
                                 // Copy block to fill-in matrix
                                 for (int c = 0; c < N; ++c) {
                                     for (int r = 0; r < M; ++r) {
-                                        fill_in_matrix[(row_start + r) + (col_start + c)*bsf->m] = bsf->blocks[k].data[r + c*M];
+                                        fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[row_idx] + c)*fill_in_matrix_size] = bsf->blocks[k].data[r + c*M];
                                     }
-                                }   
+                                }  
 
-                                // Print fill_in_matrix for debugging
-                                // printf ("Fill-in matrix after adding block at (%d, %d):\n", bsf->row_indices[k], bsf->col_indices[k]);
-                                // for (int r = 0; r < bsf->m; ++r) {
-                                //     for (int c = 0; c < bsf->n; ++c) {
-                                //         printf ("(%5.2f,%5.2f)", crealf(fill_in_matrix[r + c*bsf->m]), cimagf(fill_in_matrix[r + c*bsf->m])); 
+                                // // print fill_in_matrix for debugging
+                                // printf("Fill-in matrix after moving block %d:\n", k);
+                                // for (int r = 0; r < fill_in_matrix_size; ++r) {
+                                //     for (int c = 0; c < fill_in_matrix_size; ++c) {
+                                //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
                                 //     }
-                                //     printf ("\n");
+                                //     printf("\n");
                                 // }
-                                // printf ("\n");   
+                            } else if (bsf->col_indices[k] == col_idx && bsf->row_indices[k] > i) {
+                                // Blocks in same column
+
+                                //  Get row and column ranges
+                                const int_range row_rng = bsf->rows[bsf->row_indices[k]].range;
+                                const int_range col_rng = bsf->cols[bsf->col_indices[k]].range;
+                                const int M = range_length(row_rng);
+                                const int N = range_length(col_rng);    
+
+                                // Copy block to fill-in matrix
+                                for (int c = 0; c < N; ++c) {
+                                    for (int r = 0; r < M; ++r) {
+                                        fill_in_matrix[(fill_in_block_start[col_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = bsf->blocks[k].data[r + c*M];
+                                    }
+                                } 
+
+                                // // print fill_in_matrix for debugging
+                                // printf("Fill-in matrix after moving block %d:\n", k);
+                                // for (int r = 0; r < fill_in_matrix_size; ++r) {
+                                //     for (int c = 0; c < fill_in_matrix_size; ++c) {
+                                //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
+                                //     }
+                                //     printf("\n");
+                                // }
                             }
-                        }
+                        } 
 
                         continue; // Skip the rest of the loop, as there is no existing block to update
                     }
@@ -768,12 +791,33 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float *fill_in_mat
             }
         }
 
-        // print bsf after each outer iteration for debugging
+        // // print bsf after each outer iteration for debugging
         // printf ("Matrix after processing row %d:\n", i);
         // sparse_print_matrix(bsf);
+        // for (int j = 1; j < bsf->num_rows; j++) {
+        //     if (received_fill_in[j]) printf("Row/col %d received fill-in\n", j);
+        // }
     }
+
+    // // print fill_in_matrix for debugging
+    // printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
+    // for (int r = 0; r < fill_in_matrix_size; ++r) {
+    //     for (int c = 0; c < fill_in_matrix_size; ++c) {
+    //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
+    //     }
+    //     printf("\n");
+    // }
+
+    *fill_in_matrix_out = fill_in_matrix;
+    *fill_in_matrix_size_out = fill_in_matrix_size;
+
+    free(received_fill_in);
+    free(block_start);
+    free(fill_in_block_start);
+
     return 0;
 }
+
 
 // ==================================================================
 // Compute Ax = b, where A is given in block sparse LU format

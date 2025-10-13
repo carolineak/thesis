@@ -149,7 +149,8 @@ int sparse_lu(block_sparse_format *bsf);
 
 // ==== Compute sparse LU factorization with fill-ins ====
 int sparse_lu_with_fill_ins(block_sparse_format *bsf, 
-                            complex float *fillin_matrix);
+                            complex float **fill_in_matrix_out,
+                            int *fill_in_matrix_size_out);
 
 // ==== Compute sparse trimul ====
 int sparse_trimul(const block_sparse_format *bsf,

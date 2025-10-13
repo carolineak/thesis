@@ -23,8 +23,8 @@ void dense_print_lu(const float complex *A, int n);
 
 void dense_print_matrix(const float complex *A, int n);
 
-void dense_identity_test(int n, float complex *A, float complex *B, int *piv, int lu_factorise_dense);
+void dense_identity_test(int n, int A_n, float complex *A, float complex *B, int *piv, int lu_factorise_dense);
 
-void dense_identity_test2(int n, int A_n, float complex *A, float complex *B, int *piv, int lu_factorise_dense);
+void dense_large_identity_test(int n, float complex *A, float complex *B, int *piv, int lu_factorise_dense);
 
 #endif

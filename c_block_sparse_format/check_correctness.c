@@ -40,7 +40,7 @@ double relative_error(const float complex *y_bsf,
 // ===========================================================================
 // Computes B = P^TL_sP^TL_dU_dU_sI
 // ===========================================================================
-void sparse_dense_identity_test(int n, const block_sparse_format *bsf, float complex *A, 
+void sparse_large_dense_identity_test(int n, const block_sparse_format *bsf, float complex *A, 
                                       float complex *B, int *piv, int lu_factorise_dense) {
 
     // Allocate work vectors
@@ -102,7 +102,7 @@ void sparse_dense_identity_test(int n, const block_sparse_format *bsf, float com
 // ===========================================================================
 // Computes B = P^TL_sP^TL_dU_dU_sI
 // ===========================================================================
-void sparse_dense_identity_test2(int n, const block_sparse_format *bsf, int A_n, float complex *A, 
+void sparse_dense_identity_test(int n, const block_sparse_format *bsf, int A_n, float complex *A, 
                                       float complex *B, int *piv, int lu_factorise_dense) {
 
     // Allocate work vectors
@@ -166,7 +166,7 @@ void sparse_dense_identity_test2(int n, const block_sparse_format *bsf, int A_n,
 // ===========================================================================
 // Computes b = P^TL_sP^TL_dU_dU_sx
 // ===========================================================================
-void sparse_dense_trimul2(int n, const block_sparse_format *bsf, int dense_size, float complex *dense, 
+void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, float complex *dense, 
                                     float complex *vec_in, complex float *vec_out, int *piv, 
                                     int lu_factorise_dense) {
 
@@ -218,7 +218,7 @@ void sparse_dense_trimul2(int n, const block_sparse_format *bsf, int dense_size,
 // ===========================================================================
 // Computes b = P^TL_sP^TL_dU_dU_sx
 // ===========================================================================
-void sparse_dense_trimul(int n, const block_sparse_format *bsf, float complex *dense, 
+void sparse_large_dense_trimul(int n, const block_sparse_format *bsf, float complex *dense, 
                                     float complex *vec_in, complex float *vec_out, int *piv, 
                                     int lu_factorise_dense) {
 
@@ -262,4 +262,56 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, float complex *d
     for (int i = 0; i < n; ++i) {
         vec_out[i] = vec_in[i];
     }
+}
+
+// ===========================================================================
+// Computes b = P^TL_sP^TL_dU_dU_sb using sparse_trisolve for sparse blocks
+// TODO!!!!! Does not work currently (13/10)
+// ===========================================================================
+void sparse_dense_trisolve(int n, const block_sparse_format *bsf, int dense_size, float complex *dense, 
+                           float complex *vec_in, complex float *vec_out, int *piv, int lu_factorise_dense) {
+
+    float complex *vec_tmp = (float complex*)calloc((size_t)dense_size, sizeof(float complex));
+
+    // Forward solve: U_s * v
+    if (sparse_trisolve(bsf, vec_in, 'U') != 0) {
+        fprintf(stderr, "sparse_dense_trisolve: sparse_trisolve('U') failed\n");
+    }
+
+    int dense_start = n - dense_size;
+
+    if (lu_factorise_dense) {
+        // Forward solve: U_d * v
+        cblas_ctrsv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
+                    (lapack_int)dense_size,
+                    (const float complex*)dense, (lapack_int)dense_size,
+                    (float complex*)vec_in + dense_start, (lapack_int)1);
+                    
+        // Apply pivot to dense part before solving with L_d
+        apply_pivot_to_vector(vec_in + dense_start, dense_size, piv);
+
+        // Forward solve: L_d * v
+        cblas_ctrsv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
+                    (lapack_int)dense_size,
+                    (const float complex*)dense, (lapack_int)dense_size,
+                    (float complex*)vec_in + dense_start, (lapack_int)1);
+
+    } else {
+        // Dense matvec: y = A_d * v
+        dense_matvec(dense_size, dense_size, dense, vec_in + dense_start, vec_tmp, (float complex)1, (float complex)0, CblasColMajor);
+
+        for (int i = 0; i < dense_size; i++) {
+            vec_in[i + dense_start] = vec_tmp[i];
+        }
+    }
+
+    // Backward solve: L_s * v
+    if (sparse_trisolve(bsf, vec_in, 'L') != 0) {
+        fprintf(stderr, "sparse_dense_trisolve: sparse_trisolve('L') failed\n");
+    }
+
+    // Store result in vec_out
+    for (int i = 0; i < n; ++i) {
+        vec_out[i] = vec_in[i];
+    }    
 }
