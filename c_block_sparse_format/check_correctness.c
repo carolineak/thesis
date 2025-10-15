@@ -213,6 +213,8 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, 
     for (int i = 0; i < n; ++i) {
         vec_out[i] = vec_in[i];
     }
+
+    free(vec_tmp);
 }
 
 // ===========================================================================

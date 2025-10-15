@@ -27,6 +27,42 @@ static void copy_block_from_dense(const float complex *dense, int n,
                              dense[(row_offset + i) * n + (col_offset + j)]);
 }
 
+// ===== Block_slice helpers =====
+static inline void block_slice_reset(block_slice *s) {
+    s->indices = NULL;
+    s->num_blocks = 0;
+}
+
+static inline void matrix_block_reset(matrix_block *b) {
+    b->data = NULL;
+    b->rows = b->cols = 0;
+    b->relies_on_fillin = 0;
+}
+
+static inline void bsf_reset(block_sparse_format *bsf) {
+    if (bsf->blocks) {
+        for (int k = 0; k < bsf->num_blocks; k++) {
+            matrix_block_reset(&bsf->blocks[k]);
+        }
+    }
+    if (bsf->rows) {
+        for (int r = 0; r < bsf->num_rows; r++)
+            block_slice_reset(&bsf->rows[r]);
+    }
+    if (bsf->cols) {
+        for (int c = 0; c < bsf->num_cols; c++)
+            block_slice_reset(&bsf->cols[c]);
+    }
+    bsf->blocks = NULL;
+    bsf->rows = NULL;
+    bsf->cols = NULL;
+    bsf->row_indices = NULL;
+    bsf->col_indices = NULL;
+    bsf->global_pivot = NULL;
+    bsf->m = bsf->n = 0;
+    bsf->num_rows = bsf->num_cols = 0;
+    bsf->num_blocks = 0;
+}
 
 // ===========================================================================
 // Creates a test matrix with a given block structure
@@ -47,10 +83,16 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
 
     #define NUM_BLOCKS 8
 
-    // Create dense matrix and fill it with random complex numbers (single precision)
-    // ===================================================================
-    // float complex *dense = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
+    // Initialize block sparse format to zeros in case of early return
+    // bsf_reset(bsf);
 
+    // Dense matrix should be allocated by caller
+    if (!dense) {
+        fprintf(stderr, "No dense matrix allocated\n");
+        return 1;
+    }
+
+    // Fill dense with random complex numbers (single precision)
     for (int i = 0; i < n*n; i++) dense[i] = crand();
 
     // Create block sparse matrix on the chosen structure
@@ -88,10 +130,11 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
         int status = create(bsf, rows, cols, values, NUM_BLOCKS);
         if (status != 0) {
             fprintf(stderr, "Create() failed: %d\n", status);
-            for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
-            free(dense);
+            for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);            
             return 1;
         }
+
+        for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
 
     } else if (block_structure == 1) {
         // Pattern of zero blocks:
@@ -128,9 +171,10 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
         if (status != 0) {
             fprintf(stderr, "Create() failed: %d\n", status);
             for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
-            free(dense);
             return 1;
         }
+
+        for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
 
     } else if (block_structure == 2) {
         // Same sparsity pattern as structure 1, but block sizes vary on each block row/col.
@@ -174,9 +218,10 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
         if (status != 0) {
             fprintf(stderr, "Create() failed: %d\n", status);
             for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
-            free(dense);
             return 1;
         }
+
+        for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
 
     } else if (block_structure == 3) {
         // Same sparsity pattern as structure 1, but block sizes vary on each block row/col.
@@ -220,15 +265,17 @@ int create_test_matrix(int n, int b, int block_structure, float complex *dense, 
         if (status != 0) {
             fprintf(stderr, "Create() failed: %d\n", status);
             for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
-            free(dense);
             return 1;
         }
 
+        for (int i = 0; i < NUM_BLOCKS; i++) matrix_block_free(&values[i]);
+
     } else {
         fprintf(stderr, "Invalid block_structure %d\n", block_structure);
-        free(dense);
         return 1;
     }
+
+    
 
     return 0;
 }

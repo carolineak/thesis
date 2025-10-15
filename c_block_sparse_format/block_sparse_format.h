@@ -60,6 +60,7 @@ static inline void matrix_block_free(matrix_block *b) {
     free(b->data);
     b->data = NULL;
     b->rows = b->cols = 0;
+    b->relies_on_fillin = 0;
 }
 static inline float complex matrix_block_get(const matrix_block *b, size_t i, size_t j) {
     return b->data[MB_INDEX(b, i, j)];
@@ -98,12 +99,16 @@ static inline void bsf_free(block_sparse_format *bsf) {
     free(bsf->rows);
     free(bsf->cols);
 
+    // Free pivot - TODO: Fix valgrind error "Conditional jump or move depends on uninitialised value(s)"
+    // free(bsf->global_pivot); 
+
     // Reset
     bsf->blocks = NULL;
     bsf->rows = NULL;
     bsf->cols = NULL;
     bsf->row_indices = NULL;
     bsf->col_indices = NULL;
+    bsf->global_pivot = NULL;
     bsf->m = bsf->n = 0;
     bsf->num_rows = bsf->num_cols = 0;
     bsf->num_blocks = 0;

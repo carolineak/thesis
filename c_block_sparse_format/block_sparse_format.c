@@ -228,6 +228,9 @@ int create(block_sparse_format *bsf,
     for (i = 0; i < num_blocks; i++) {
         bsf->blocks[i].relies_on_fillin = 0;    
     }
+
+    // Set global pivot to NULL
+    bsf->global_pivot = NULL;
 }
 
 // ===================================================================
@@ -411,10 +414,8 @@ int sparse_lu(block_sparse_format *bsf) {
     int num_blocks = bsf->num_blocks;
 
     // Allocate global pivot vector if not already allocated
-    if (!bsf->global_pivot) {
-        bsf->global_pivot = malloc(bsf->n * sizeof(int));
-        if (!bsf->global_pivot) return -2;
-    }
+    bsf->global_pivot = malloc(bsf->n * sizeof(int));
+    if (!bsf->global_pivot) return -2;
 
     for (int i = 0; i < bsf->num_rows; ++i) {
         // Find diagonal block index
@@ -498,17 +499,16 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float **fill_in_ma
 
     if (!bsf || !fill_in_matrix_out) return -1;
 
-    *fill_in_matrix_out = NULL;       
+    *fill_in_matrix_out = NULL;  
+    *fill_in_matrix_size_out = 0; 
 
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
 
     // Allocate global pivot vector if not already allocated
-    if (!bsf->global_pivot) {
-        bsf->global_pivot = calloc(bsf->n, sizeof(int));
-        if (!bsf->global_pivot) return -2;
-    }
+    bsf->global_pivot = calloc(bsf->n, sizeof(int));
+    if (!bsf->global_pivot) return -2;
 
     // Flag array for keeping track of if row/col received fill-in
     int *received_fill_in = (int*)malloc((int)bsf->num_rows * sizeof(int));
@@ -814,6 +814,7 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float **fill_in_ma
     free(received_fill_in);
     free(block_start);
     free(fill_in_block_start);
+    // free(fill_in_matrix);
 
     return 0;
 }
