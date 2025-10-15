@@ -222,15 +222,15 @@ int create(block_sparse_format *bsf,
         bsf->n += range_length(bsf->cols[i].range);
     }
 
-    return 0;
-
     // Set relies_on_fillin flag for each block to 0 (no fill-in reliance)
     for (i = 0; i < num_blocks; i++) {
         bsf->blocks[i].relies_on_fillin = 0;    
     }
-
+    
     // Set global pivot to NULL
     bsf->global_pivot = NULL;
+    
+    return 0;
 }
 
 // ===================================================================

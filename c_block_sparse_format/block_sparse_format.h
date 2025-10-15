@@ -99,8 +99,8 @@ static inline void bsf_free(block_sparse_format *bsf) {
     free(bsf->rows);
     free(bsf->cols);
 
-    // Free pivot - TODO: Fix valgrind error "Conditional jump or move depends on uninitialised value(s)"
-    // free(bsf->global_pivot); 
+    // Free pivot
+    free(bsf->global_pivot); 
 
     // Reset
     bsf->blocks = NULL;
