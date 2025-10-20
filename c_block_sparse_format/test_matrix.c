@@ -73,7 +73,7 @@ static inline void bsf_reset(block_sparse_format *bsf) {
 // 2 4 7 -
 // - - - 8
 
-// 1: structure that creates fill-ins
+// 1, 2, 3: structure that creates fill-ins
 // 1 - - -
 // - 2 5 7
 // - 3 6 -
@@ -82,9 +82,6 @@ static inline void bsf_reset(block_sparse_format *bsf) {
 int create_test_matrix(int n, int b, int block_structure, float complex *dense, block_sparse_format *bsf) {
 
     #define NUM_BLOCKS 8
-
-    // Initialize block sparse format to zeros in case of early return
-    // bsf_reset(bsf);
 
     // Dense matrix should be allocated by caller
     if (!dense) {
