@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <complex.h>
+#include <lapacke.h>
 
 // Integer range
 typedef struct {
@@ -83,6 +84,11 @@ static inline int range_length(int_range r) {
     return (r.end >= r.start) ? (r.end - r.start + 1) : 0;
 }
 
+// ==== Pivot helpers ====
+void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
+
+void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv);
+
 
 // ==== Create block sparse matrix ====
 int create(block_sparse_format *bsf,
@@ -104,5 +110,11 @@ int sparse_matvec(const block_sparse_format *bsf,
 
 // ==== Compute sparse LU factorization with fill-ins ====
 int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out);
+
+// ==== Compute sparse trimul ====
+int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo);
+
+// ==== Test that LUI = A ====
+int sparse_identity_test(const block_sparse_format *bsf, float complex *A);
 
 #endif
