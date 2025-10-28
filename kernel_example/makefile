@@ -1,43 +1,42 @@
-# Compilers
+# ==== Compilers ====
 CC      = gcc
 NVCC    = nvcc
 
-# Flags
-CFLAGS  = -Wall -Wextra -O2
+# ==== Flags ====
+CFLAGS    = -Wall -Wextra -O2
 NVCCFLAGS = -O2
 
-# Target
+# ==== Files ====
 TARGET  = demo
-
-# Sources and objects
 SRCS_C   = main.c
 SRCS_CU  = kernels.cu
 OBJS_C   = $(SRCS_C:.c=.o)
 OBJS_CU  = $(SRCS_CU:.cu=.o)
 OBJS     = $(OBJS_C) $(OBJS_CU)
 
-# Libraries (add more if needed)
-LDLIBS = -lm
+# ==== Libraries ====
+LDLIBS = -lcudart -lm
 
-# Default rule
+# ==== Default rule ====
 all: $(TARGET)
 
-# Link step — use nvcc so CUDA runtime is linked automatically
+# ==== Linking ====
+# Use nvcc for linking so CUDA runtime is correctly included
 $(TARGET): $(OBJS)
 	$(NVCC) -o $@ $(OBJS) $(LDLIBS)
 
-# Compile C source
+# ==== Compile C sources ====
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Compile CUDA source
+# ==== Compile CUDA sources ====
 %.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
-# Run target
+# ==== Run ====
 run: $(TARGET)
 	./$(TARGET)
 
-# Clean
+# ==== Clean ====
 clean:
 	rm -f $(OBJS) $(TARGET)
