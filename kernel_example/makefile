@@ -15,7 +15,7 @@ OBJS_CU  = $(SRCS_CU:.cu=.o)
 OBJS     = $(OBJS_C) $(OBJS_CU)
 
 # ==== Libraries ====
-LDLIBS = -lcudart -lm
+LDLIBS = -lcudart -lcublas -lm
 
 # ==== Default rule ====
 all: $(TARGET)
