@@ -13,7 +13,7 @@ int main(void)
     // Fill a and b with some test data
     for (int i = 0; i < n; ++i) {
         a[i] = (float)i;
-        b[i] = 100.0f + (float)i;
+        b[i] = (float)i;
     }
 
     // Call the CUDA launcher
