@@ -2,7 +2,7 @@
 CC      = gcc
 NVCC    = nvcc                          
 CFLAGS  = -Wall -Wextra -O2 -MMD -MP
-NVCCFLAGS = -O2 -Xcompiler "-Wall -Wextra -MMD -MP"  
+NVCCFLAGS = -O2 -Xcompiler "-Wall -Wextra"  
 
 # Libraries
 LDLIBS = -lopenblas -llapacke -lm
@@ -15,7 +15,8 @@ OBJS_C   = $(SRCS_C:.c=.o)
 OBJS_CU  = $(SRCS_CU:.cu=.o)         
 
 OBJS     = $(OBJS_C) $(OBJS_CU)      
-DEPS     = $(OBJS_C:.o=.d) $(OBJS_CU:.o=.d)  
+DEPS     = $(OBJS_C:.o=.d)           # only C files generate deps
+
 # Target executable
 TARGET  = demo
 
@@ -24,8 +25,7 @@ TARGET  = demo
 # Default rule
 all: $(TARGET)
 
-# Link
-# use NVCC here so cudart gets linked automatically
+# Link (use NVCC so cudart is linked automatically)
 $(TARGET): $(OBJS)
 	$(NVCC) -o $@ $(OBJS) $(LDLIBS)
 
@@ -33,11 +33,11 @@ $(TARGET): $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Compile .cu to .o (also generate .d)
+# Compile .cu to .o (no .d to avoid tmpxft issue)
 %.o: %.cu
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
-# Include auto-generated dependency files (if present)
+# Include dependency files
 -include $(DEPS)
 
 # Run the demo
@@ -52,4 +52,3 @@ debug: clean all
 # Cleanup
 clean:
 	rm -f $(OBJS) $(DEPS) $(TARGET)
-
