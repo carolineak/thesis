@@ -390,10 +390,19 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
 
     if (!bsf || !fill_in_matrix_out) return -1;
 
+    // Upload date to the GPU
+    int err = bsf_upload_flat_data(bsf);
+    if (err != 0) return err;
+
+    // Test kernel
     if (launch_kernel(1) != 0) {
         printf("Launch of kernel failed\n");
         return -1;
     }
+
+    // Download from the GPU - TODO: Move to the end
+    err = bsf_download_flat_data(bsf);
+    if (err != 0) return err;
 
     *fill_in_matrix_out = NULL;  
     *fill_in_matrix_size_out = 0; 
@@ -900,5 +909,93 @@ int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
     }
 
     free(v);
+    return 0;
+}
+
+static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
+{
+    if (!bsf || !bsf->block_sizes) return 0;
+
+    size_t total = 0;
+    for (int i = 0; i < bsf->num_blocks; ++i) {
+        if (bsf->block_sizes[i] > 0)
+            total += (size_t)bsf->block_sizes[i];
+    }
+    return total;
+}
+
+int bsf_upload_flat_data(block_sparse_format *bsf)
+{
+    if (!bsf) return -1;
+    if (!bsf->flat_data) return -2;
+
+    size_t numel = bsf_flat_num_elements(bsf);
+    if (numel == 0) {
+        // Nothing to upload
+        if (bsf->d_flat_data) {
+            cudaFree(bsf->d_flat_data);
+            bsf->d_flat_data = NULL;
+        }
+        bsf->flat_on_device = 0;
+        return 0;
+    }
+
+    size_t bytes = numel * sizeof(cuFloatComplex);
+
+    if (bsf->d_flat_data) {
+        cudaFree(bsf->d_flat_data);
+        bsf->d_flat_data = NULL;
+    }
+
+    cudaError_t err = cudaMalloc((void**)&bsf->d_flat_data, bytes);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bsf_upload_flat_data] cudaMalloc failed: %s\n",
+                cudaGetErrorString(err));
+        bsf->flat_on_device = 0;
+        return -3;
+    }
+
+    // flat_data is float complex; cuFloatComplex has the same layout in practice.
+    err = cudaMemcpy(bsf->d_flat_data,
+                     (const void*)bsf->flat_data,
+                     bytes,
+                     cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bsf_upload_flat_data] cudaMemcpy H2D failed: %s\n",
+                cudaGetErrorString(err));
+        cudaFree(bsf->d_flat_data);
+        bsf->d_flat_data   = NULL;
+        bsf->flat_on_device = 0;
+        return -4;
+    }
+
+    bsf->flat_on_device = 1;
+    return 0;
+}
+
+int bsf_download_flat_data(block_sparse_format *bsf)
+{
+    if (!bsf) return -1;
+    if (!bsf->flat_data) return -2;
+    if (!bsf->flat_on_device || !bsf->d_flat_data) {
+        // Nothing to download or not on device
+        return 0;
+    }
+
+    size_t numel = bsf_flat_num_elements(bsf);
+    if (numel == 0) return 0;
+
+    size_t bytes = numel * sizeof(cuFloatComplex);
+
+    cudaError_t err = cudaMemcpy((void*)bsf->flat_data,
+                                 (const void*)bsf->d_flat_data,
+                                 bytes,
+                                 cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[bsf_download_flat_data] cudaMemcpy D2H failed: %s\n",
+                cudaGetErrorString(err));
+        return -3;
+    }
+
     return 0;
 }

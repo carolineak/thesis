@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <complex.h>
 #include <lapacke.h>
+#include <cuda_runtime.h>
+#include <cuComplex.h>
 
 // Integer range
 typedef struct {
@@ -40,6 +42,10 @@ typedef struct {
     
     int *relies_on_fillin;      // Flag array to check if block relies of fill-in, len=num_blocks
     int *global_pivot;          // Global pivot vector for all diagonal blocks, len=sum of row range of each block
+
+    cuFloatComplex *d_flat_data;   // Device copy of flat_data
+    int flat_on_device;            // 1 if d_flat_data is allocated & up to date
+
 } block_sparse_format;  
 
 // ===== Block_slice helpers =====
@@ -47,6 +53,18 @@ static inline void block_slice_free(block_slice *s) {
     free(s->indices);
     s->indices = NULL;
     s->num_blocks = 0;
+}
+
+
+void bsf_free_device_flat_data(block_sparse_format *bsf)
+{
+    if (!bsf) return;
+
+    if (bsf->d_flat_data) {
+        cudaFree(bsf->d_flat_data);
+        bsf->d_flat_data = NULL;
+    }
+    bsf->flat_on_device = 0;
 }
 
 // ===== Block_sparse_format helpers =====
@@ -70,6 +88,8 @@ static inline void bsf_free(block_sparse_format *bsf) {
     free(bsf->col_indices);
     free(bsf->relies_on_fillin);
     free(bsf->global_pivot);
+
+    // Call device free
 }
 
 // ==== Range helpers ====
