@@ -6,7 +6,7 @@ CFLAGS  = -Wall -Wextra -O2 -MMD -MP
 LDLIBS = -lopenblas -llapacke -lm
 
 # Sources and objects
-SRCS    = block_sparse_format.c test_matrix.c block_sparse_test_runner.c main.c
+SRCS    = block_sparse_format.c test_matrix.c block_sparse_test_runner.c load_binary_data.c main.c
 OBJS    = $(SRCS:.c=.o)
 DEPS    = $(OBJS:.o=.d)
 

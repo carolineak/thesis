@@ -98,6 +98,8 @@ int create(block_sparse_format *bsf,
            const int *block_lengths, 
            const float complex *data);
 
+int load_block_sparse_from_bin(const char *path, block_sparse_format *bsf);
+
 // ==== Print block sparse matrix as dense matrix ====
 void sparse_print_matrix(const block_sparse_format *bsf);
 
