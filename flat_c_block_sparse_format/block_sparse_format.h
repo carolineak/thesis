@@ -111,7 +111,11 @@ int sparse_matvec(const block_sparse_format *bsf,
                   int len_out);
 
 // ==== Compute sparse LU factorization with fill-ins ====
-int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out);
+int sparse_lu(block_sparse_format *bsf, 
+              complex float **fill_in_matrix_out, 
+              int *fill_in_matrix_size_out, 
+              int **received_fill_in_out, 
+              int *received_fill_in_size_out);
 
 // ==== Compute sparse trimul ====
 int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo);
