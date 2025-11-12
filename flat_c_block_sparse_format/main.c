@@ -51,9 +51,9 @@ int main(void) {
     printf("Test on binary data\n");
     char *data = "../data/sparse_data_xs.bin";
     run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
-    run_lu_identity_test_with_bin_data(data);
+    // run_lu_identity_test_with_bin_data(data);
 
-    debug_print_input_bin("../data/sparse_data_xs.bin");
+    // debug_print_input_bin("../data/sparse_data_xs.bin");
 
     printf("All tests completed. Passed %d out of %d tests.\n", passed, total);
 

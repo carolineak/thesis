@@ -98,33 +98,31 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, 
     int print_start2 = 30; //140;
     int print_end2 = 40; //150;
 
-    printf("\nvec_in (0):\n");
-    for (int i = print_start1; i < print_end1; i++) {
-        printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
-    }
+    // printf("\nvec_in (0):\n");
+    // for (int i = print_start1; i < print_end1; i++) {
+    //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
+    // }
 
     // v := U_s * v
     if (sparse_trimul(bsf, vec_in, 'U') != 0) {
         fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed");
     }
 
-    printf("\nvec_in (1):\n");
-    for (int i = print_start1; i < print_end1; i++) {
-        printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
-    }
+    // printf("\nvec_in (1):\n");
+    // for (int i = print_start1; i < print_end1; i++) {
+    //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
+    // }
 
     int dense_start = n - dense_size;
     printf("\ndense_start: %d, n: %d, dense_size: %d\n", dense_start, n, dense_size);
 
-
-    // print dense
-    printf("\ndense matrix:\n");
-    for (int r = 0; r < 1; ++r) {
-        for (int c = 0; c < dense_size; ++c) {
-            printf("(%5.2f,%5.2f) ", crealf(dense[r + c * dense_size]), cimagf(dense[r + c * dense_size]));
-        }
-        printf("\n");
-    }
+    // printf("\ndense matrix (first row):\n");
+    // for (int r = 0; r < 1; ++r) {
+    //     for (int c = 0; c < dense_size; ++c) {
+    //         printf("(%5.2f,%5.2f) ", crealf(dense[r + c * dense_size]), cimagf(dense[r + c * dense_size]));
+    //     }
+    //     printf("\n");
+    // }
 
     if (lu_factorise_dense) {
         // v := U_d * v
@@ -133,10 +131,10 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, 
                     (const float complex*)dense, (lapack_int)dense_size,
                     (float complex*)vec_in + dense_start, (lapack_int)1);
 
-        printf("\nvec_in (2):\n");
-        for (int i = print_start1; i < print_end1; i++) {
-            printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
-        }
+        // printf("\nvec_in (2):\n");
+        // for (int i = print_start1; i < print_end1; i++) {
+        //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
+        // }
 
         // v := L_d * v
         cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
@@ -144,18 +142,18 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, 
             (const float complex*)dense, (lapack_int)dense_size,
             (float complex*)vec_in + dense_start, (lapack_int)1);
 
-        printf("\nvec_in (3):\n");
-        for (int i = print_start1; i < print_end1; i++) {
-            printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
-        }
+        // printf("\nvec_in (3):\n");
+        // for (int i = print_start1; i < print_end1; i++) {
+        //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
+        // }
 
         // v := P^T * v
         apply_inverse_pivot_to_vector(vec_in + dense_start, dense_size, piv);
 
-        printf("\nvec_in (4):\n");
-        for (int i = print_start1; i < print_end1; i++) {
-            printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
-        }
+        // printf("\nvec_in (4):\n");
+        // for (int i = print_start1; i < print_end1; i++) {
+        //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
+        // }
 
     } else {   
         // y := A_d * v
@@ -172,20 +170,20 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, 
         fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed");
     }
 
-    printf("\nvec_in (5):\n");
-    for (int i = print_start1; i < print_end1; i++) {
-        printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
-    }
+    // printf("\nvec_in (5):\n");
+    // for (int i = print_start1; i < print_end1; i++) {
+    //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_in[i]), cimagf(vec_in[i]));
+    // }
 
     // Store in vec_out
     for (int i = 0; i < n; ++i) {
         vec_out[i] = vec_in[i];
     }
 
-    printf("\nvec_out:\n");
-    for (int i = print_start1; i < print_end1; i++) {
-        printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_out[i]), cimagf(vec_out[i]));
-    }
+    // printf("\nvec_out:\n");
+    // for (int i = print_start1; i < print_end1; i++) {
+    //     printf("b2[%d] = (%5.2f,%5.2f)\n", i, crealf(vec_out[i]), cimagf(vec_out[i]));
+    // }
 
     free(vec_tmp);
 }
@@ -593,7 +591,7 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
             // for (int i = 30; i < 40; i++) {
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i < (n < 20 ? n : 20); i++) {
                 printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));
