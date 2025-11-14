@@ -1,9 +1,12 @@
 # Compiler and flags
 CC      = gcc
-CFLAGS  = -Wall -Wextra -O2 -MMD -MP
+CFLAGS = -Wall -Wextra -O2 -MMD -MP \
+         -I/usr/include \
+         -I/usr/include/lapacke \
+         -I/usr/include/openblas
 
 # Libraries
-LDLIBS = -lopenblas -llapacke -lm
+LDLIBS = -lopenblas -llapacke -llapack -lm
 
 # Sources and objects
 SRCS    = block_sparse_format.c test_matrix.c block_sparse_test_runner.c load_binary_data.c main.c
