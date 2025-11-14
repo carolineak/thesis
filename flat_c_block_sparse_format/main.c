@@ -12,8 +12,8 @@
 
 int main(void) {
     // Test parameters
-    const int block_sizes[]   = {2, 20};
-    const int structures[]    = {0,1,2,3}; // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
+    // const int block_sizes[]   = {2, 20};
+    // const int structures[]    = {0,1,2,3}; // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
     const int print           = 2;              // 0=silent, 1=results, 2=show data, 3=show LU
     const double tolerance    = 1e-3;
 
@@ -53,7 +53,7 @@ int main(void) {
     run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
     // run_lu_identity_test_with_bin_data(data);
 
-    // debug_print_input_bin("../data/sparse_data_xs.bin");
+    // debug_print_input_bin(data);
 
     printf("All tests completed. Passed %d out of %d tests.\n", passed, total);
 

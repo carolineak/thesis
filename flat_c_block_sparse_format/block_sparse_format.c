@@ -224,7 +224,7 @@ int create(block_sparse_format *bsf,
     // Relies on fill-in and global pivot are only allocated if used in LU
     bsf->relies_on_fillin = NULL;
     bsf->global_pivot = NULL;
-
+    bsf->is_lower = NULL;
     
     return 0;
 }
@@ -271,12 +271,12 @@ void sparse_print_matrix(const block_sparse_format *bsf) {
 
     // Print dense matrix
     // printf("Block sparse matrix as dense (%d x %d):\n", bsf->m, bsf->n);
-    for (int r = 45; r < 55; ++r) {
-        for (int c = 45; c < 55; ++c) {
+    // for (int r = 45; r < 55; ++r) {
+    //     for (int c = 45; c < 55; ++c) {
     // for (int r = 105; r < 115; ++r) {
     //     for (int c = 105; c < 115; ++c) {
-    // for (int r = 0; r < bsf->m; ++r) {
-    //     for (int c = 0; c < bsf->n; ++c) {
+    for (int r = 0; r < bsf->m; ++r) {
+        for (int c = 0; c < bsf->n; ++c) {
             printf("(%5.2f,%5.2f) ", crealf(dense[r + c * bsf->m]), cimagf(dense[r + c * bsf->m]));
         }
         printf("\n");
@@ -357,7 +357,7 @@ int sparse_matvec(const block_sparse_format *bsf,
 //
 // Returns 0 on success, <0 on error.
 // ==================================================================
-int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out, int **received_fill_in_out, int *received_fill_in_size_out) {
+int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out, int **received_fill_in_out) {
 
     if (!bsf || !fill_in_matrix_out || !received_fill_in_out) return -1;
 
@@ -366,7 +366,6 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     *fill_in_matrix_out = NULL;  
     *fill_in_matrix_size_out = 0; 
     *received_fill_in_out = NULL;
-    *received_fill_in_size_out = 0;
 
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
@@ -375,6 +374,10 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     // Allocate global pivot vector if not already allocated
     bsf->global_pivot = calloc(bsf->n, sizeof(int));
     if (!bsf->global_pivot) return -2;
+
+    // Allocate is_lower 
+    bsf->is_lower = (int*)calloc((int)bsf->num_blocks, sizeof(int));
+    if (!bsf->is_lower) return -3;
 
     // Flag array for keeping track of if row/col received fill-in
     int *received_fill_in = (int*)calloc((int)bsf->num_rows, sizeof(int));
@@ -467,31 +470,29 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     // ========================================================================
     // Create fill-in matrix
     // ========================================================================
-    // Find first true index in received_fill_in and set the element of that index to be the offset
-    int offset = 0;
-    for (int j = 0; j < bsf->num_rows; j++) {
-        if (received_fill_in[j]) {
-            offset = block_start[j];
-            break;
-        }
-    }
-
     // Number of rows/cols that received fill-in
     int num_fill_in = 0;
     for (int j = 0; j < bsf->num_rows; j++) {
         if (received_fill_in[j]) num_fill_in++;
     }
 
+    // The block start of the first row/col that received fill-in is determined by the offset
+    // The rest is determined by the block sizes of the previous rows/cols that received fill-in
+    // All rows that did not receive fill-in have block start -1
+    int offset = 0;
     int *fill_in_block_start = (int*)malloc((int)bsf->num_rows * sizeof(int));
-        for (int j = 0; j < bsf->num_rows; j++) {
-            fill_in_block_start[j] = 0;
-            if (received_fill_in[j]) {
-                fill_in_block_start[j] = block_start[j] - offset;
-            }
+    for (int j = 0; j < bsf->num_rows; j++) {
+        if (received_fill_in[j]) {
+            fill_in_block_start[j] = offset;
+            offset += range_length(bsf->rows[j].range);
+            printf("Range length of row/col %d: %d\n", j, offset);
+        } else {
+            fill_in_block_start[j] = -1;
         }
+    }
     
     // print fill_in_block_start for debugging
-    printf("Fill-in block starts (adjusted by offset %d):\n", offset);
+    printf("Fill-in block starts:\n");
     for (int j = 0; j < bsf->num_rows; j++) {
         printf("%d ", fill_in_block_start[j]);
     }
@@ -555,7 +556,6 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         }
         if (diag_idx < 0) return -3;
 
-        int diag_offset = bsf->offsets[diag_idx];
         int diag_M = range_length(bsf->rows[bsf->row_indices[diag_idx]].range);
         int diag_N = range_length(bsf->cols[bsf->col_indices[diag_idx]].range); 
 
@@ -579,7 +579,10 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         // Compute L_21 = A_21 * U_11^-1
         for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
             int blk_idx = bsf->cols[i].indices[jj];
-            if (bsf->row_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+            if (bsf->row_indices[blk_idx] == i) continue;
+            if (bsf->row_indices[blk_idx] < i && !received_fill_in[bsf->row_indices[blk_idx]]) continue;
+            // Set is_lower flag
+            bsf->is_lower[blk_idx] = 1;
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);  
             block_trsm(bsf->flat_data + bsf->offsets[blk_idx], bsf->flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, CblasRight, CblasUpper, CblasNonUnit);
@@ -592,7 +595,8 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         // Compute U_12 = L_11^-1 * P^T * A_12
         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
             int blk_idx = bsf->rows[i].indices[ii];
-            if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+            if (bsf->col_indices[blk_idx] == i) continue;
+            if (bsf->col_indices[blk_idx] < i && !received_fill_in[bsf->col_indices[blk_idx]]) continue;
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);  
             block_trsm(bsf->flat_data + bsf->offsets[blk_idx], bsf->flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, CblasLeft, CblasLower, CblasUnit);            
@@ -665,40 +669,6 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         // print bsf after each outer iteration for debugging
         // printf ("Matrix after processing row %d:\n", i);
         // sparse_print_matrix(bsf);
-
-        // // print block 11
-        // printf("After processing row %d, block 11 with size (%d x %d):\n", i,
-        //        range_length(bsf->rows[bsf->row_indices[11]].range),
-        //        range_length(bsf->cols[bsf->col_indices[11]].range));
-        // int block_11_idx = 11;
-        // for (int r = 0; r < range_length(bsf->rows[bsf->row_indices[block_11_idx]].range); ++r) {
-        //     for (int c = 0; c < range_length(bsf->cols[bsf->col_indices[block_11_idx]].range); ++c) {
-        //         printf("(%5.2f,%5.2f) ", crealf(bsf->flat_data[bsf->offsets[block_11_idx] + r + c*range_length(bsf->rows[bsf->row_indices[block_11_idx]].range)]), cimagf(bsf->flat_data[bsf->offsets[block_11_idx] + r + c*range_length(bsf->rows[bsf->row_indices[block_11_idx]].range)]));
-        //     }
-        //     printf("\n");
-        // }
-
-        // // print block 12
-        // printf("After processing row %d, block 12 with size (%d x %d):\n", i,
-        //        range_length(bsf->rows[bsf->row_indices[12]].range),
-        //        range_length(bsf->cols[bsf->col_indices[12]].range));
-        // for (int r = 0; r < range_length(bsf->rows[bsf->row_indices[12]].range); ++r) {
-        //     for (int c = 0; c < range_length(bsf->cols[bsf->col_indices[12]].range); ++c) {
-        //         printf("(%5.2f,%5.2f) ", crealf(bsf->flat_data[bsf->offsets[12] + r + c*range_length(bsf->rows[bsf->row_indices[12]].range)]), cimagf(bsf->flat_data[bsf->offsets[12] + r + c*range_length(bsf->rows[bsf->row_indices[12]].range)]));
-        //     }
-        //     printf("\n");
-        // }
-
-        // // print block 16
-        // printf("After processing row %d, block 16 with size (%d x %d):\n", i,
-        //        range_length(bsf->rows[bsf->row_indices[16]].range),
-        //        range_length(bsf->cols[bsf->col_indices[16]].range));
-        // for (int r = 0; r < range_length(bsf->rows[bsf->row_indices[16]].range); ++r) {
-        //     for (int c = 0; c < range_length(bsf->cols[bsf->col_indices[16]].range); ++c) {
-        //         printf("(%5.2f,%5.2f) ", crealf(bsf->flat_data[bsf->offsets[16] + r + c*range_length(bsf->rows[bsf->row_indices[16]].range)]), cimagf(bsf->flat_data[bsf->offsets[16] + r + c*range_length(bsf->rows[bsf->row_indices[16]].range)]));
-        //     }
-        //     printf("\n");
-        // }
 
     }        
 
@@ -797,6 +767,8 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         }
     }
 
+    // printf("Final matrix after moving fill-ins:\n");
+    // sparse_print_matrix(bsf);
 
     // print fill_in_matrix for debugging
     // printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
@@ -813,10 +785,17 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     }
     printf("\n");
 
+    // Print block id's that are in lower triangular part
+    printf("Blocks marked as lower triangular:\n");
+    for (int k = 0; k < bsf->num_blocks; ++k) {
+        if (bsf->is_lower[k]) {
+            printf("Block %d at (%d, %d) is lower triangular\n", k, bsf->row_indices[k], bsf->col_indices[k]);
+        }
+    }
+
     *fill_in_matrix_out = fill_in_matrix;
     *fill_in_matrix_size_out = fill_in_matrix_size;
     *received_fill_in_out = received_fill_in;
-    *received_fill_in_size_out = bsf->num_rows;
 
     free(block_start);
     free(fill_in_block_start);
@@ -881,7 +860,9 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
             // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
-                if (bsf->col_indices[blk_idx] > i || blk_idx == diag_idx) continue;
+                // if (bsf->col_indices[blk_idx] > i || blk_idx == diag_idx) continue; 
+                // check if "L"
+                if (!bsf->is_lower[blk_idx] || blk_idx == diag_idx) continue;
                 int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
                 int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
                 cblas_cgemv(CblasColMajor, CblasNoTrans,
@@ -921,7 +902,9 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
             // After updating the diagonal block, update the blocks in the same row
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
-                if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+                // if (bsf->col_indices[blk_idx] <= i || blk_idx == diag_idx) continue;
+                // check if "U"
+                if (bsf->is_lower[blk_idx] || blk_idx == diag_idx) continue;
                 int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
                 int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
                 cblas_cgemv(CblasColMajor, CblasNoTrans,

@@ -192,10 +192,11 @@ int load_block_sparse_from_bin(const char *path, block_sparse_format *bsf)
     int n = 0;
 
     for (int k = 0; k < num_blocks; ++k) {
-        row_start[k] = (int)row_start32[k];
-        row_stop[k]  = (int)row_stop32[k];
-        col_start[k] = (int)col_start32[k];
-        col_stop[k]  = (int)col_stop32[k];
+        // Convert from 1-indexed to 0-indexed by subtracting 1
+        row_start[k] = (int)row_start32[k] - 1;
+        row_stop[k]  = (int)row_stop32[k] - 1;
+        col_start[k] = (int)col_start32[k] - 1;
+        col_stop[k]  = (int)col_stop32[k] - 1;
 
         int last_row = row_stop[k] + 1;
         int last_col = col_stop[k] + 1;

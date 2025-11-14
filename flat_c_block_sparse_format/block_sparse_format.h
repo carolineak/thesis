@@ -40,6 +40,7 @@ typedef struct {
     
     int *relies_on_fillin;      // Flag array to check if block relies of fill-in, len=num_blocks
     int *global_pivot;          // Global pivot vector for all diagonal blocks, len=sum of row range of each block
+    int *is_lower;              // Flag arrays to check if block is in lower triangular, len=num_blocks
 } block_sparse_format;  
 
 // ===== Block_slice helpers =====
@@ -114,8 +115,7 @@ int sparse_matvec(const block_sparse_format *bsf,
 int sparse_lu(block_sparse_format *bsf, 
               complex float **fill_in_matrix_out, 
               int *fill_in_matrix_size_out, 
-              int **received_fill_in_out, 
-              int *received_fill_in_size_out);
+              int **received_fill_in_out);
 
 // ==== Compute sparse trimul ====
 int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo);
