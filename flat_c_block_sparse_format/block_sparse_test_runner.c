@@ -486,10 +486,10 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         error = 1;
     }
 
-    check_block_sparse_format(&bsf);
+    // Print information about the loaded block sparse matrix
+    // check_block_sparse_format(&bsf);
 
     int n = bsf.n;
-    printf("n: %d\n", n);
 
     float complex *x = malloc((size_t)n * sizeof(float complex));
     float complex *b1 = malloc((size_t)n * sizeof(float complex));
@@ -513,12 +513,6 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         gettimeofday(&start, NULL);
         int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
         gettimeofday(&end, NULL);
-        printf("fill_in_matrix_size: %d\n", fill_in_matrix_size);
-        printf("received_fill_in:\n");
-        for (int i = 0; i < bsf.num_rows; i++) {
-            printf("%d ", received_fill_in[i]);
-        }
-        printf("\n");
 
         if (bsf_lu_status != 0) {
             fprintf(stderr, "sparse_lu: %d\n", bsf_lu_status);
@@ -545,7 +539,6 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
             fprintf(stderr, "Alloc vec_out failed\n");
             error = 1;
         } else {
-            printf("n: %d, fill_in_matrix_size: %d\n", n, fill_in_matrix_size);
             sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
             for (int i = 0; i < n; ++i) b2[i] = vec_out[i];
             free(vec_out);
@@ -558,7 +551,6 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         double norm_b1 = 0.0;
         for (int i = 0; i < n; i++) norm_b1 += cabsf(b1[i]) * cabsf(b1[i]);
         norm_b1 = sqrtf(norm_b1);
-        printf("norm_b1: %.6f\n", norm_b1);
         double norm_diff = 0.0;
         for (int i = 0; i < n; i++) {
             float d = cabsf(b1[i] - b2[i]);
@@ -578,9 +570,7 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
 
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
-            // for (int i = 30; i < 40; i++) {
-            // for (int i = 0; i < n; i++) {
-            for (int i = 0; i < (n < 20 ? n : 20); i++) {
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
                 printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));
