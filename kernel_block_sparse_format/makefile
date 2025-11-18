@@ -21,14 +21,15 @@ LDLIBS = -L$(CUDA_LIB) -lcudart -lcublas \
          -lopenblas -llapacke -llapack -lm
 
 # ==== Sources and objects ====
-SRCS_C   = block_sparse_format.c test_matrix.c block_sparse_test_runner.c main.c
+SRCS_C   = block_sparse_format.c test_matrix.c block_sparse_test_runner.c load_binary_data.c main.c
 SRCS_CU  = kernels.cu              
 
 OBJS_C   = $(SRCS_C:.c=.o)
 OBJS_CU  = $(SRCS_CU:.cu=.o)         
 
 OBJS     = $(OBJS_C) $(OBJS_CU)      
-DEPS     = $(OBJS_C:.o=.d)           # only C files generate deps
+DEPS_C   = $(OBJS_C:.o=.d)
+DEPS_CU  = $(OBJS_CU:.o=.d)
 
 # ==== Target executable ====
 TARGET  = demo
@@ -51,7 +52,7 @@ $(TARGET): $(OBJS)
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
 # ==== Include dependency files ====
--include $(DEPS)
+-include $(DEPS_C) $(DEPS_CU)
 
 # ==== Run the demo ====
 run: $(TARGET)
@@ -64,4 +65,4 @@ debug: clean all
 
 # ==== Cleanup ====
 clean:
-	rm -f $(OBJS) $(DEPS) $(TARGET)
+	rm -f $(OBJS) $(DEPS_C) $(DEPS_CU) $(TARGET)

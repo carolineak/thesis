@@ -42,6 +42,7 @@ typedef struct {
     
     int *relies_on_fillin;      // Flag array to check if block relies of fill-in, len=num_blocks
     int *global_pivot;          // Global pivot vector for all diagonal blocks, len=sum of row range of each block
+    int *is_lower;              // Flag arrays to check if block is in lower triangular, len=num_blocks
 
     cuFloatComplex *d_flat_data;   // Device copy of flat_data
     int flat_on_device;            // 1 if d_flat_data is allocated & up to date
@@ -56,16 +57,16 @@ static inline void block_slice_free(block_slice *s) {
 }
 
 
-void bsf_free_device_flat_data(block_sparse_format *bsf)
-{
-    if (!bsf) return;
+// void bsf_free_device_flat_data(block_sparse_format *bsf)
+// {
+//     if (!bsf) return;
 
-    if (bsf->d_flat_data) {
-        cudaFree(bsf->d_flat_data);
-        bsf->d_flat_data = NULL;
-    }
-    bsf->flat_on_device = 0;
-}
+//     if (bsf->d_flat_data) {
+//         cudaFree(bsf->d_flat_data);
+//         bsf->d_flat_data = NULL;
+//     }
+//     bsf->flat_on_device = 0;
+// }
 
 // ===== Block_sparse_format helpers =====
 static inline void bsf_free(block_sparse_format *bsf) {
@@ -129,7 +130,10 @@ int sparse_matvec(const block_sparse_format *bsf,
                   int len_out);
 
 // ==== Compute sparse LU factorization with fill-ins ====
-int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out);
+int sparse_lu(block_sparse_format *bsf, 
+              complex float **fill_in_matrix_out, 
+              int *fill_in_matrix_size_out, 
+              int **received_fill_in_out);
 
 // ==== Compute sparse trimul ====
 int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo);

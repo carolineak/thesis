@@ -3,11 +3,12 @@
 #include <complex.h>
 #include <string.h>
 #include <cblas.h>
-// #include <lapacke.h>
+#include <lapacke.h>
 #include <math.h>
 #include <sys/time.h>
 #include "block_sparse_format.h"
 #include "test_matrix.h"
+#include "load_binary_data.h"
 
 // ===========================================================================
 // Compute matvec on dense matrix
@@ -88,39 +89,68 @@ double relative_error(const float complex *y_bsf,
 // ===========================================================================
 void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, float complex *dense, 
                                     float complex *vec_in, complex float *vec_out, int *piv, 
-                                    int lu_factorise_dense) {
+                                    int lu_factorise_dense, int *received_fill_in) {
 
     float complex *vec_tmp = (float complex*)calloc((size_t)dense_size, sizeof(float complex));
+    float complex *vec_tmp_unfactorised = (float complex*)calloc((size_t)dense_size, sizeof(float complex));
 
     // v := U_s * v
     if (sparse_trimul(bsf, vec_in, 'U') != 0) {
         fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed");
     }
 
-    int dense_start = n - dense_size;
+    // From vec_in, move the blocks that received fill-in to a temporary vector
+    int offset = 0;
+    for (int i = 0; i < bsf->num_rows; i++) {
+        if (received_fill_in[i]) {
+            const int_range row_rng = bsf->rows[i].range;
+            const int M = range_length(row_rng);
+            const int dense_start = row_rng.start;
+            for (int r = 0; r < M; r++) {
+                vec_tmp[offset + r] = vec_in[dense_start + r];
+                vec_in[dense_start + r] = 0.0f + 0.0f*I;
+            }
+            offset += M;
+        }
+    }
 
     if (lu_factorise_dense) {
         // v := U_d * v
         cblas_ctrmv(CblasColMajor, CblasUpper, CblasNoTrans, CblasNonUnit,
                     (lapack_int)dense_size,
                     (const float complex*)dense, (lapack_int)dense_size,
-                    (float complex*)vec_in + dense_start, (lapack_int)1);
+                    (float complex*)vec_tmp, (lapack_int)1);
 
         // v := L_d * v
         cblas_ctrmv(CblasColMajor, CblasLower, CblasNoTrans, CblasUnit,
             (lapack_int)dense_size,
             (const float complex*)dense, (lapack_int)dense_size,
-            (float complex*)vec_in + dense_start, (lapack_int)1);
+            (float complex*)vec_tmp, (lapack_int)1);
+
 
         // v := P^T * v
-        apply_inverse_pivot_to_vector(vec_in + dense_start, dense_size, piv);
+        apply_inverse_pivot_to_vector(vec_tmp, dense_size, piv);
 
     } else {   
         // y := A_d * v
-        dense_matvec(dense_size, dense_size, dense, vec_in + dense_start, vec_tmp, (float complex)1, (float complex)0, CblasColMajor);
+        dense_matvec(dense_size, dense_size, dense, vec_tmp, vec_tmp_unfactorised, (float complex)1, (float complex)0, CblasColMajor);
 
         for (int i = 0; i < dense_size; i ++) {
-            vec_in[i + dense_start] = vec_tmp[i];
+            vec_tmp[i] = vec_tmp_unfactorised[i];
+        }
+    }
+
+    // Move the blocks that received fill-in back to vec_in
+    offset = 0;
+    for (int i = 0; i < bsf->num_rows; i++) {
+        if (received_fill_in[i]) {
+            const int_range row_rng = bsf->rows[i].range;
+            const int M = range_length(row_rng);
+            const int dense_start = row_rng.start;
+            for (int r = 0; r < M; r++) {
+                vec_in[dense_start + r] = vec_tmp[offset + r];;
+            }
+            offset += M;
         }
     }
 
@@ -128,6 +158,7 @@ void sparse_dense_trimul(int n, const block_sparse_format *bsf, int dense_size, 
     if (sparse_trimul(bsf, vec_in, 'L') != 0) {
         fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed");
     }
+
 
     // Store in vec_out
     for (int i = 0; i < n; ++i) {
@@ -253,7 +284,6 @@ void sparse_dense_identity_test(int n, const block_sparse_format *bsf, int A_n, 
     free(y);
 }
 
-
 void run_matvec_test(int n, int b, int block_structure, int print, double tolerance, int *passed) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -302,6 +332,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     float complex *b2 = malloc((size_t)n * sizeof(float complex));
     float complex *fill_in_matrix = NULL;
     int fill_in_matrix_size = 0;
+    int *received_fill_in = NULL;
     int *fill_in_piv = NULL;
     int error = 0;
     struct timeval start, end;
@@ -332,7 +363,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     if (!error) {
         if (block_structure == 0) {
             gettimeofday(&start, NULL);
-            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size);
+            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
             gettimeofday(&end, NULL);
 
             if (bsf_lu_status != 0) {
@@ -343,11 +374,11 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
             }
         } else if (block_structure >= 1) {
             gettimeofday(&start, NULL);
-            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size);
+            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
             gettimeofday(&end, NULL);
 
             if (bsf_lu_status != 0) {
-                fprintf(stderr, "sparse_lu_with_fill_ins failed: %d\n", bsf_lu_status);
+                fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
                 error = 1;
 
             } else {
@@ -386,7 +417,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
                 fprintf(stderr, "Alloc vec_out failed\n");
                 error = 1;
             } else {
-                sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense);
+                sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
                 for (int i = 0; i < n; ++i) b2[i] = vec_out[i];
                 free(vec_out);
             }
@@ -436,6 +467,127 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     free(b1);
     free(b2);
     free(fill_in_matrix);
+    free(received_fill_in);
+    free(fill_in_piv);
+}
+
+void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, char *data) {
+    block_sparse_format bsf = {0};
+    float complex *fill_in_matrix = NULL;
+    int fill_in_matrix_size = 0;
+    int *received_fill_in = NULL;
+    int *fill_in_piv = NULL;
+    int error = 0;
+    struct timeval start, end;
+
+    int err = load_block_sparse_from_bin(data, &bsf);
+    if (err != 0) {
+        fprintf(stderr, "Failed to load sparse_data.bin, error %d\n", err);
+        error = 1;
+    }
+
+    // Print information about the loaded block sparse matrix
+    // check_block_sparse_format(&bsf);
+
+    int n = bsf.n;
+
+    float complex *x = malloc((size_t)n * sizeof(float complex));
+    float complex *b1 = malloc((size_t)n * sizeof(float complex));
+    float complex *b2 = malloc((size_t)n * sizeof(float complex));
+
+    // Generate x filled with ones
+    for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
+
+    // Compute b1 = A*x using sparse_matvec
+    if (sparse_matvec(&bsf, x, n, b1, n) != 0) {
+        fprintf(stderr, "sparse_matvec failed\n");
+        error = 1;
+    }
+
+    // printf("The original A:\n");
+    // sparse_print_matrix(&bsf);
+
+    // Factorize block sparse matrix
+    int lu_factorise_dense = 1;
+    if (!error) {
+        gettimeofday(&start, NULL);
+        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+        gettimeofday(&end, NULL);
+
+        if (bsf_lu_status != 0) {
+            fprintf(stderr, "sparse_lu: %d\n", bsf_lu_status);
+            error = 1;
+
+        } else {
+            fill_in_piv = malloc((size_t)fill_in_matrix_size * sizeof(int));
+            if (!fill_in_piv) {
+                fprintf(stderr, "Alloc fill_in_piv failed\n");
+                error = 1;
+            } else if (lu_factorise_dense) {
+                dense_lu(fill_in_matrix, fill_in_matrix_size, fill_in_piv);
+            }
+            if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
+        }
+    }
+
+    // Save x in b2
+    if (!error) {
+        memcpy(b2, x, (size_t)n * sizeof(float complex));
+
+        float complex *vec_out = calloc((size_t)n, sizeof(float complex));
+        if (!vec_out) {
+            fprintf(stderr, "Alloc vec_out failed\n");
+            error = 1;
+        } else {
+            sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
+            for (int i = 0; i < n; ++i) b2[i] = vec_out[i];
+            free(vec_out);
+        }
+    }
+
+    // Compare b1 and b2
+    // ||b1 - b2|| / ||b1||
+    if (!error) {
+        double norm_b1 = 0.0;
+        for (int i = 0; i < n; i++) norm_b1 += cabsf(b1[i]) * cabsf(b1[i]);
+        norm_b1 = sqrtf(norm_b1);
+        double norm_diff = 0.0;
+        for (int i = 0; i < n; i++) {
+            float d = cabsf(b1[i] - b2[i]);
+            norm_diff += d * d;
+        }
+        norm_diff = sqrtf(norm_diff);
+        double rel_err = norm_diff / (norm_b1 > 0.0 ? norm_b1 : 1.0);
+
+        if (print >= 1) {
+            if (rel_err < tolerance) {
+                printf("TEST PASSED: Relative error of computing b = LUx is %.2e\n", rel_err);
+                (*passed)++;
+            } else {
+                printf("TEST FAILED: Relative error of computing b = LUx is %.2e\n", rel_err);
+            }
+        }
+
+        if (print >= 2) {
+            printf("\nFirst few entries of b1 and b2:\n");
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
+                printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+                    i, crealf(b1[i]), cimagf(b1[i]),
+                    i, crealf(b2[i]), cimagf(b2[i]));
+            }
+        }
+    }
+
+    double seconds = (end.tv_sec - start.tv_sec)
+                   + (end.tv_usec - start.tv_usec) / 1e6;
+    printf("Time spend computing LU: %.6f s\n", seconds);
+
+    bsf_free(&bsf);
+    free(x);
+    free(b1);
+    free(b2);
+    free(fill_in_matrix);
+    free(received_fill_in);
     free(fill_in_piv);
 }
 
@@ -444,6 +596,7 @@ void run_lu_identity_test(int n, int b, int block_structure) {
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
     float complex *fill_in_matrix = NULL;
     int fill_in_matrix_size = 0;
+    int *received_fill_in = NULL;
     int *fill_in_piv = NULL;
 
     if (!dense) {
@@ -458,12 +611,12 @@ void run_lu_identity_test(int n, int b, int block_structure) {
     // Factorize block sparse matrix and fill-in matrix
     int lu_factorise_dense = 1;
     if (block_structure == 0) {
-        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size);
+        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
         if (bsf_lu_status != 0) {
             fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
         }
     } else if (block_structure >= 1) {
-        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size);
+        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
         if (bsf_lu_status != 0) {
             fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
         }
@@ -543,5 +696,107 @@ void run_lu_identity_test(int n, int b, int block_structure) {
     free(A_dense_reconstructed);
     free(A_all_factors_reconstructed);
     free(fill_in_matrix);
+    free(received_fill_in);
+    free(fill_in_piv);
+}
+
+
+void run_lu_identity_test_with_bin_data(char *data) {
+    block_sparse_format bsf;
+    float complex *fill_in_matrix = NULL;
+    int fill_in_matrix_size = 0;
+    int *received_fill_in = NULL;
+    int *fill_in_piv = NULL;
+
+    load_block_sparse_from_bin(data, &bsf);
+    int n = bsf.n;
+    
+    int print_start1 = 45; //105;
+    int print_end1 = 55; //115;
+    int print_start2 = 45; //140;
+    int print_end2 = 55; //150;
+
+    printf("The original A:\n");
+    sparse_print_matrix(&bsf);
+
+    // Factorize block sparse matrix and fill-in matrix
+    int lu_factorise_dense = 1;
+    int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+    if (bsf_lu_status != 0) {
+        fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
+    }
+    fill_in_piv = malloc((size_t)fill_in_matrix_size * sizeof(int));
+    if (!fill_in_piv) {
+        fprintf(stderr, "Alloc fill_in_piv failed\n");
+    }
+    if (lu_factorise_dense) {
+        dense_lu(fill_in_matrix, fill_in_matrix_size, fill_in_piv);
+    }
+
+    printf("\nThe sparse matrix A_s (factorised):\n");
+    sparse_print_matrix(&bsf);
+
+    if (lu_factorise_dense) {
+        printf("\nThe dense matrix A_d (factorised):\n");
+    } else {
+        printf("\nThe dense matrix A_d (unfactorised):\n");
+    }
+    for (int r = 0; r < 10; ++r) {
+        for (int c = 0; c < 10; ++c) {
+            printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
+        }
+        printf("\n");
+    }
+
+    float complex *A_sparse_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
+    sparse_identity_test(&bsf, A_sparse_reconstructed);
+
+    printf("\nMatrix reconstructed from L_s*U_s*I:\n");
+    for (int i = print_start1; i < print_end1; ++i) {
+        for (int j = print_start2; j < print_end2; ++j) {
+            float complex z = A_sparse_reconstructed[j*(size_t)n + i];
+            printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
+        }
+        printf("\n");
+    }
+
+    float complex *A_dense_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
+    dense_identity_test(n, fill_in_matrix_size, fill_in_matrix, A_dense_reconstructed, fill_in_piv, lu_factorise_dense);
+
+    if (lu_factorise_dense) {
+        printf("\nMatrix reconstructed from L_d*U_d*I:\n");
+    } else {
+        printf("\nMatrix reconstructed from A_d*I:\n");
+    }
+    for (int i = print_start1; i < print_end1; ++i) {
+        for (int j = print_start2; j < print_end2; ++j) {
+            float complex z = A_dense_reconstructed[j*(size_t)n + i];
+            printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
+        }
+        printf("\n");
+    }
+
+    float complex *A_all_factors_reconstructed = (float complex*)malloc((size_t)n * (size_t)n * sizeof(float complex));
+    sparse_dense_identity_test(n, &bsf, fill_in_matrix_size, fill_in_matrix, A_all_factors_reconstructed, fill_in_piv, lu_factorise_dense);
+
+    if (lu_factorise_dense) {
+        printf("\nA reconstructed from L_s*L_d*U_d*U_s*I:\n");
+    } else {
+        printf("\nA reconstructed from L_s*A_d*U_s*I:\n");
+    }
+    for (int i = print_start1; i < print_end1; ++i) {
+        for (int j = print_start2; j < print_end2; ++j) {
+            float complex z = A_all_factors_reconstructed[j*(size_t)n + i];
+            printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
+        }
+        printf("\n");
+    }
+
+    bsf_free(&bsf);
+    free(A_sparse_reconstructed);
+    free(A_dense_reconstructed);
+    free(A_all_factors_reconstructed);
+    free(fill_in_matrix);
+    free(received_fill_in);
     free(fill_in_piv);
 }
