@@ -49,9 +49,10 @@ int main(void) {
     // }
 
     printf("Test on binary data\n");
-    char *data = "../data/sparse_data_xs.bin";
+    // char *data = "/x/users/mhg/til_ck/patch_array/patch_array_8x8.bin";
+    char *data = "../data/patch_array_8x8.bin";
     run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
-    // run_lu_identity_test_with_bin_data(data);
+    // run_lu_identity_test_with_bin_data(data, print);
 
     // debug_print_input_bin(data);
 

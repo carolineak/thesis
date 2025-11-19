@@ -4,6 +4,7 @@
 #include <complex.h>
 #include <lapacke.h>
 #include <cblas.h>
+#include <sys/time.h>
 #include "block_sparse_format.h"
 
 // LU factorisation with pivoting for a dense matrix_block
@@ -358,7 +359,7 @@ int sparse_matvec(const block_sparse_format *bsf,
 //
 // Returns 0 on success, <0 on error.
 // ==================================================================
-int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out, int **received_fill_in_out) {
+int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out, int **received_fill_in_out, int print) {
 
     if (!bsf || !fill_in_matrix_out || !received_fill_in_out) return -1;
 
@@ -386,6 +387,13 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     int *block_start = (int*)malloc((int)bsf->num_rows * sizeof(int));
     if (!block_start) return -1;
     for (int i = 0; i < bsf->num_rows; ++i) block_start[i] = bsf->rows[i].range.start;
+
+    // Array for keeping track of how many matmuls per operation, length = 4
+    int matmul_counts[4] = {0, 0, 0, 0}; // {L solve, U solve, Schur update, Total}
+
+    // Array for keeping track of time taken per operation, length = 4
+    double time_counts[4] = {0.0, 0.0, 0.0, 0.0}; // {L solve, U solve, Schur update, Total}
+    struct timeval start, end;
 
     // ========================================================================
     // Dry run to get size of fill-in matrix
@@ -522,7 +530,12 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
             bsf->is_lower[blk_idx] = 1;
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);  
+            gettimeofday(&start, NULL);
             block_trsm(bsf->flat_data + bsf->offsets[blk_idx], bsf->flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, CblasRight, CblasUpper, CblasNonUnit);
+            gettimeofday(&end, NULL);
+            double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+            time_counts[0] += elapsed;
+            matmul_counts[0] += 1; // L solve
         }
 
         // // Print matrix after diagonal factorization for debugging
@@ -536,8 +549,12 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
             if (bsf->col_indices[blk_idx] < i && !received_fill_in[bsf->col_indices[blk_idx]]) continue;
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);  
-            block_trsm(bsf->flat_data + bsf->offsets[blk_idx], bsf->flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, CblasLeft, CblasLower, CblasUnit);            
-            
+            gettimeofday(&start, NULL);
+            block_trsm(bsf->flat_data + bsf->offsets[blk_idx], bsf->flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, CblasLeft, CblasLower, CblasUnit); 
+            gettimeofday(&end, NULL);
+            double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+            time_counts[1] += elapsed;           
+            matmul_counts[1] += 1; // U solve
         }
 
         // // Print matrix after diagonal factorization for debugging
@@ -578,7 +595,12 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
 
                     // Perform Schur update on the new block
                     const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
+                    gettimeofday(&start, NULL);
                     block_schur_update(new_blk, bsf->flat_data + bsf->offsets[L_21_idx], bsf->flat_data + bsf->offsets[U_12_idx], M, N, K);
+                    gettimeofday(&end, NULL);
+                    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+                    time_counts[2] += elapsed;
+                    matmul_counts[2] += 1; // Schur update
 
                     // Copy updated block back to fill-in matrix
                     for (int c = 0; c < N; ++c) {
@@ -597,7 +619,12 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                 const int N = range_length(bsf->cols[bsf->col_indices[A_22_idx]].range);
                 const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
                 // printf("Schur updating A_22 block %d from U_12 block %d and L_21 block %d\n", A_22_idx, U_12_idx, L_21_idx);
+                gettimeofday(&start, NULL);
                 block_schur_update(bsf->flat_data + bsf->offsets[A_22_idx], bsf->flat_data + bsf->offsets[L_21_idx], bsf->flat_data + bsf->offsets[U_12_idx], M, N, K);
+                gettimeofday(&end, NULL);
+                double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+                time_counts[2] += elapsed;
+                matmul_counts[2] += 1; // Schur update
             }
         }
 
@@ -666,6 +693,23 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     //         printf("Block %d at (%d, %d) is lower triangular\n", k, bsf->row_indices[k], bsf->col_indices[k]);
     //     }
     // }
+
+    matmul_counts[3] = matmul_counts[0] + matmul_counts[1] + matmul_counts[2];
+    time_counts[3] = time_counts[0] + time_counts[1] + time_counts[2];
+    if (print >= 1) {
+        printf("Sparse LU factorization completed.\n");
+        printf("Number of block matrix operations:\n");
+        printf("  L solves       : %d\n", matmul_counts[0]);
+        printf("  U solves       : %d\n", matmul_counts[1]);
+        printf("  Schur updates  : %d\n", matmul_counts[2]);
+        printf("  Total          : %d\n", matmul_counts[3]);
+        printf("Time taken (seconds):\n");
+        printf("  L solves       : %f\n", time_counts[0]);
+        printf("  U solves       : %f\n", time_counts[1]);
+        printf("  Schur updates  : %f\n", time_counts[2]);
+        printf("  Total          : %f\n", time_counts[3]);
+        printf("Fill-in matrix size: %d x %d\n", fill_in_matrix_size, fill_in_matrix_size);
+    }
 
     *fill_in_matrix_out = fill_in_matrix;
     *fill_in_matrix_size_out = fill_in_matrix_size;

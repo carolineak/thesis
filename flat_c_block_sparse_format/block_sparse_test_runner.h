@@ -9,8 +9,8 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
 
 void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, char *data);
 
-void run_lu_identity_test(int n, int b, int block_structure);
+void run_lu_identity_test(int n, int b, int block_structure, int print);
 
-void run_lu_identity_test_with_bin_data(char *data);
+void run_lu_identity_test_with_bin_data(char *data, int print);
 
 #endif

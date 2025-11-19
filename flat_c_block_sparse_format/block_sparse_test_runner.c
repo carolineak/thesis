@@ -363,7 +363,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     if (!error) {
         if (block_structure == 0) {
             gettimeofday(&start, NULL);
-            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
             gettimeofday(&end, NULL);
 
             if (bsf_lu_status != 0) {
@@ -374,7 +374,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
             }
         } else if (block_structure >= 1) {
             gettimeofday(&start, NULL);
-            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+            int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
             gettimeofday(&end, NULL);
 
             if (bsf_lu_status != 0) {
@@ -508,10 +508,10 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     // sparse_print_matrix(&bsf);
 
     // Factorize block sparse matrix
-    int lu_factorise_dense = 1;
+    int lu_factorise_dense = 0;
     if (!error) {
         gettimeofday(&start, NULL);
-        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
         gettimeofday(&end, NULL);
 
         if (bsf_lu_status != 0) {
@@ -591,7 +591,7 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     free(fill_in_piv);
 }
 
-void run_lu_identity_test(int n, int b, int block_structure) {
+void run_lu_identity_test(int n, int b, int block_structure, int print) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
     float complex *fill_in_matrix = NULL;
@@ -611,12 +611,12 @@ void run_lu_identity_test(int n, int b, int block_structure) {
     // Factorize block sparse matrix and fill-in matrix
     int lu_factorise_dense = 1;
     if (block_structure == 0) {
-        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
         if (bsf_lu_status != 0) {
             fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
         }
     } else if (block_structure >= 1) {
-        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+        int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
         if (bsf_lu_status != 0) {
             fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
         }
@@ -701,7 +701,7 @@ void run_lu_identity_test(int n, int b, int block_structure) {
 }
 
 
-void run_lu_identity_test_with_bin_data(char *data) {
+void run_lu_identity_test_with_bin_data(char *data, int print) {
     block_sparse_format bsf;
     float complex *fill_in_matrix = NULL;
     int fill_in_matrix_size = 0;
@@ -721,7 +721,7 @@ void run_lu_identity_test_with_bin_data(char *data) {
 
     // Factorize block sparse matrix and fill-in matrix
     int lu_factorise_dense = 1;
-    int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
+    int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
     if (bsf_lu_status != 0) {
         fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
     }
