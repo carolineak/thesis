@@ -508,7 +508,7 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     // sparse_print_matrix(&bsf);
 
     // Factorize block sparse matrix
-    int lu_factorise_dense = 1;
+    int lu_factorise_dense = 0;
     if (!error) {
         gettimeofday(&start, NULL);
         int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in);
@@ -571,7 +571,7 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
             for (int i = 0; i < (n < 8 ? n : 8); i++) {
-                printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+                printf("b1[%d] = (%5.6f,%5.6f)   b2[%d] = (%5.6f,%5.6f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));
             }

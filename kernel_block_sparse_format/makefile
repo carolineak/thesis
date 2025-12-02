@@ -18,6 +18,7 @@ NVCCFLAGS = -O2 -Xcompiler "-Wall -Wextra" -I$(CUDA_INC)
 
 # ==== Libraries ====
 LDLIBS = -L$(CUDA_LIB) -lcudart -lcublas \
+		 -lcusolver \
          -lopenblas -llapacke -llapack -lm
 
 # ==== Sources and objects ====
