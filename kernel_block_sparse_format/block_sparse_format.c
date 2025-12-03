@@ -19,7 +19,15 @@ static int block_lu(float complex *blk, int n, int *ipiv) {
 // ==================================================================
 // Triangular solve with pivoting on device
 // ==================================================================
-static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int B_m, int B_n, int A_m, int *ipiv, char side, char uplo, char diag) {
+static void cuda_block_trsm(cuFloatComplex *d_A, 
+                            cuFloatComplex *d_B, 
+                            int B_m, 
+                            int B_n, 
+                            int A_m, 
+                            int *ipiv, 
+                            char side, 
+                            char uplo, 
+                            char diag) {
     // d_A: device pointer to LU-factored diagonal block (triangular m x m)
     // d_B: device pointer to block to be overwritten (m x n)
 
@@ -185,16 +193,6 @@ int bsf_download_flat_data(block_sparse_format *bsf)
 
 // ==================================================================
 // Create a block_sparse_format matrix
-//
-// Arguments
-//   bsf            : block_sparse_format (output)
-//   row_indices    : array of row indices
-//   col_indices    : array of col indices
-//   num_blocks     : number of blocks
-//   block_lengths  : array of length of each block row/col
-//   data           : flattened data of matrix blocks
-//
-// Returns 0 on success, <0 on allocation failure
 // ==================================================================
 int create(block_sparse_format *bsf,
            const int *row_indices,
@@ -314,10 +312,6 @@ int create(block_sparse_format *bsf,
 
 // ==================================================================
 // Prints a block sparse matrix as a dense matrix
-// Fill in empty blocks with zeros
-// 
-// Arguments
-//   bsf : Block-sparse matrix
 // ==================================================================  
 void sparse_print_matrix(const block_sparse_format *bsf) {
     if (!bsf) {
@@ -366,19 +360,12 @@ void sparse_print_matrix(const block_sparse_format *bsf) {
 
 // ==================================================================
 // Compute a matrix-vector product for a block sparse matrix
-//
-// Arguments
-//   bsf      : Block-sparse matrix (column-major blocks)
-//   vec_in   : Dense input vector (length = len_in  == bsf->n)
-//   len_in   : Length of vec_in
-//   vec_out  : Dense output vector (length = len_out == bsf->m)
-//   len_out  : Length of vec_out
-//
-// Returns 0 on success, <0 on error.
 // ==================================================================
 int sparse_matvec(const block_sparse_format *bsf,
-                  const float complex *vec_in,  int len_in,
-                  float complex *vec_out,       int len_out)
+                  const float complex *vec_in,  
+                  int len_in,
+                  float complex *vec_out,       
+                  int len_out)
 {
     // Check sizes match
     if (len_in != bsf->n || len_out != bsf->m) {
@@ -486,17 +473,11 @@ int sparse_matvec(const block_sparse_format *bsf,
 
 // ==================================================================
 // Sparse LU factorisation of block sparse matrix with fill-ins
-//
-// Arguments
-//   bsf : Block-sparse matrix (column-major blocks), modified in place to contain
-//         the LU factors in its blocks.
-//   fill_in_matrix_out : Pointer to dense matrix to store fill-ins (output)
-//   fill_in_matrix_size_out : Pointer to size of fill-in matrix (output)
-//   received_fill_in_out : Pointer to flag array indicating which rows/cols received fill-in (output)
-//
-// Returns 0 on success, <0 on error.
 // ==================================================================
-int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out, int **received_fill_in_out) {
+int sparse_lu(block_sparse_format *bsf, 
+              complex float **fill_in_matrix_out, 
+              int *fill_in_matrix_size_out, 
+              int **received_fill_in_out) {
 
     // =======================================================================
     // Check inputs
@@ -900,15 +881,10 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
 
 // ==================================================================
 // Compute Ax = b, where A is given in block sparse LU format
-//
-// Arguments
-//   bsf : Block-sparse matrix in LU factorized form
-//   b   : Right-hand side vector, solution is written in place
-//   uplo : 'L' for lower triangular solve, 'U' for upper triangular solve
-//
-// Returns 0 on success, <0 on error.
 // ==================================================================
-int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
+int sparse_trimul(const block_sparse_format *bsf, 
+                  float complex *b, 
+                  char uplo) {
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
     int n = bsf->num_rows;
@@ -1018,17 +994,10 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
 }
 
 // ===================================================================
-// sparse_identity_test
-//
 // Computes A * I = A for an LU-factorized block-sparse matrix A = L*U.
-// For each column e_j of the identity, applies:
-//   v := U * e_j   then   v := L * v
-// The resulting v is column j of A. Prints the dense A.
-//
-// Returns 0 on success, <0 on error.
 // ===================================================================
-int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
-    // Basic checks
+int sparse_identity_test(const block_sparse_format *bsf, 
+                         float complex *A) {
     if (!bsf) return -1;
     if (bsf->m != bsf->n) {
         fprintf(stderr, "sparse_identity_test: Matrix is not square (m=%d, n=%d)\n", bsf->m, bsf->n);

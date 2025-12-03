@@ -591,6 +591,9 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     free(fill_in_piv);
 }
 
+// ===========================================================================
+// Run LU identity test
+// ===========================================================================
 void run_lu_identity_test(int n, int b, int block_structure) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -700,7 +703,9 @@ void run_lu_identity_test(int n, int b, int block_structure) {
     free(fill_in_piv);
 }
 
-
+// ===========================================================================
+// Run LU identity test on block sparse matrix loaded from binary file
+// ===========================================================================
 void run_lu_identity_test_with_bin_data(char *data) {
     block_sparse_format bsf;
     float complex *fill_in_matrix = NULL;

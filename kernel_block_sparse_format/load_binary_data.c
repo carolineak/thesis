@@ -6,8 +6,9 @@
 #include <sys/time.h>
 #include "block_sparse_format.h"
 
-
+// =================================================================
 // Compare function for qsort: sort by start, then end
+// =================================================================
 static int cmp_range(const void *a, const void *b)
 {
     const int_range *ra = (const int_range *)a;
@@ -20,7 +21,9 @@ static int cmp_range(const void *a, const void *b)
     return 0;
 }
 
+// =================================================================
 // Build row/col slices with ranges sorted by (start, end)
+// =================================================================
 static int build_slices_from_ranges(
     int num_blocks,
     const int *start_arr,
@@ -36,7 +39,7 @@ static int build_slices_from_ranges(
         return 0;
     }
 
-    // 1) Collect all ranges
+    // Collect all ranges
     int_range *all_ranges = malloc((size_t)num_blocks * sizeof *all_ranges);
     if (!all_ranges) return -1;
 
@@ -45,10 +48,10 @@ static int build_slices_from_ranges(
         all_ranges[k].end   = end_arr[k];
     }
 
-    // 2) Sort them
+    // Sort them
     qsort(all_ranges, (size_t)num_blocks, sizeof *all_ranges, cmp_range);
 
-    // 3) Deduplicate to unique sorted ranges
+    //Deduplicate to unique sorted ranges
     int_range *unique = malloc((size_t)num_blocks * sizeof *unique);
     int *counts       = calloc((size_t)num_blocks, sizeof *counts);
     if (!unique || !counts) {
@@ -70,11 +73,10 @@ static int build_slices_from_ranges(
 
     free(all_ranges);
 
-    // 4) For each block, find which unique range it belongs to and count
+    // For each block, find which unique range it belongs to and count
     for (int k = 0; k < num_blocks; ++k) {
         int_range r = { start_arr[k], end_arr[k] };
 
-        // linear search is fine unless you have *huge* numbers of slices
         int slice_idx = -1;
         for (int s = 0; s < num_slices; ++s) {
             if (unique[s].start == r.start && unique[s].end == r.end) {
@@ -92,7 +94,7 @@ static int build_slices_from_ranges(
         counts[slice_idx]++;
     }
 
-    // 5) Allocate slices in sorted range order
+    // Allocate slices in sorted range order
     block_slice *slices = calloc((size_t)num_slices, sizeof *slices);
     if (!slices) {
         free(unique);
@@ -114,7 +116,7 @@ static int build_slices_from_ranges(
         counts[s] = 0; // reuse as fill position
     }
 
-    // 6) Fill slice->indices using the precomputed mapping
+    // Fill slice->indices using the precomputed mapping
     for (int k = 0; k < num_blocks; ++k) {
         int s = out_block_indices[k];
         int pos = counts[s]++;
@@ -130,6 +132,9 @@ static int build_slices_from_ranges(
 }
 
 
+// ===========================================================================
+// Load block sparse matrix from binary file
+// ===========================================================================
 int load_block_sparse_from_bin(const char *path, block_sparse_format *bsf)
 {
     if (!bsf) return -1;
@@ -289,6 +294,9 @@ int load_block_sparse_from_bin(const char *path, block_sparse_format *bsf)
 }
 
 
+// ===========================================================================
+// Check the integrity of a block sparse format structure
+// ===========================================================================
 void check_block_sparse_format(const block_sparse_format *bsf)
 {
     if (!bsf) {
@@ -385,6 +393,9 @@ void check_block_sparse_format(const block_sparse_format *bsf)
     printf("=========================================================\n\n");
 }
 
+// ==================================================================
+// Debug print the contents of a binary input file
+// ==================================================================
 void debug_print_input_bin(const char *path)
 {
     FILE *f = fopen(path, "rb");
@@ -393,7 +404,7 @@ void debug_print_input_bin(const char *path)
         return;
     }
 
-    // 1) Read num_blocks (Int32)
+    // Read num_blocks 
     int32_t num_blocks32 = 0;
     if (fread(&num_blocks32, sizeof num_blocks32, 1, f) != 1) {
         printf("[debug_print_input_bin] ERROR: could not read num_blocks\n");
@@ -408,7 +419,7 @@ void debug_print_input_bin(const char *path)
     }
     int num_blocks = (int)num_blocks32;
 
-    // 2) Allocate arrays for indices
+    // Allocate arrays for indices
     int32_t *row_start = malloc((size_t)num_blocks * sizeof *row_start);
     int32_t *row_stop  = malloc((size_t)num_blocks * sizeof *row_stop);
     int32_t *col_start = malloc((size_t)num_blocks * sizeof *col_start);
@@ -421,7 +432,7 @@ void debug_print_input_bin(const char *path)
         return;
     }
 
-    // 3) Read the four index arrays
+    // Read the four index arrays
     if (fread(row_start, sizeof(int32_t), (size_t)num_blocks, f) != (size_t)num_blocks ||
         fread(row_stop,  sizeof(int32_t), (size_t)num_blocks, f) != (size_t)num_blocks ||
         fread(col_start, sizeof(int32_t), (size_t)num_blocks, f) != (size_t)num_blocks ||
@@ -433,7 +444,7 @@ void debug_print_input_bin(const char *path)
         return;
     }
 
-    // 4) Determine how many complex values there are from file size
+    // Determine how many complex values there are from file size
     long header_bytes = sizeof(num_blocks32)
                       + 4L * num_blocks * (long)sizeof(int32_t);
 
@@ -468,7 +479,7 @@ void debug_print_input_bin(const char *path)
                values_bytes, sizeof(float complex));
     }
 
-    // 5) Read the complex values
+    // Read the complex values
     if (fseek(f, header_bytes, SEEK_SET) != 0) {
         printf("[debug_print_input_bin] ERROR: fseek to values section failed\n");
         free(row_start); free(row_stop); free(col_start); free(col_stop);
@@ -497,8 +508,7 @@ void debug_print_input_bin(const char *path)
 
     fclose(f);
 
-    // 6) Print a nice summary
-
+    // Print a nice summary
     printf("=========================================================\n");
     printf("Debug print of binary matrix file: %s\n", path);
     printf("---------------------------------------------------------\n");
@@ -536,8 +546,6 @@ void debug_print_input_bin(const char *path)
     if (num_blocks > show) printf("... (%d more)", num_blocks - show);
     printf("\n\n");
 
-    // Optional: compute expected total values from block shapes
-    // assuming ranges are [start, stop) (end-exclusive).
     size_t expected_values = 0;
     for (int b = 0; b < num_blocks; ++b) {
         int rows = row_stop[b] - row_start[b] + 1;
@@ -574,7 +582,6 @@ void debug_print_input_bin(const char *path)
 
     printf("=========================================================\n");
 
-    // 7) Cleanup
     free(row_start); free(row_stop); free(col_start); free(col_stop);
     free(values);
 }
