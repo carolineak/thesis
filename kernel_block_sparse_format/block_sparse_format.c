@@ -16,23 +16,23 @@ static int block_lu(float complex *blk, int n, int *ipiv) {
     return (int)info;
 }
 
-// =================================================================
+// ==================================================================
 // Triangular solve with pivoting on device
 // ==================================================================
-static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int A_m, int A_n, int B_m, int *ipiv, char side, char uplo, char diag) {
-    // d_A: device pointer to block to be overwritten (m x n)
-    // d_B: device pointer to LU-factor diagonal block (triangular)
+static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int B_m, int B_n, int A_m, int *ipiv, char side, char uplo, char diag) {
+    // d_A: device pointer to LU-factored diagonal block (triangular m x m)
+    // d_B: device pointer to block to be overwritten (m x n)
 
-    int m = A_m;
-    int n = A_n;
-    int lda = B_m; // leading dim of triangular block
-    int ldb = A_m; // leading dim of target block
+    int m = B_m; // number of rows of target block
+    int n = B_n; // number of columns of target block
+    int lda = A_m; // leading dim of triangular block
+    int ldb = B_m; // leading dim of target block
 
     cuFloatComplex alpha = make_cuFloatComplex(1.0f, 0.0f);
 
     // If required, apply pivots to the target block on device
     if (ipiv && (side == 'L' || side == 'l') && (uplo == 'L' || uplo == 'l')) {
-        int rc = apply_pivots_cu(d_A, ldb, n, ipiv, m);
+        int rc = apply_pivots_cu(d_B, ldb, n, ipiv, m);
         if (rc != 0) {
             fprintf(stderr, "apply_pivots_cu failed: %d\n", rc);
         }
@@ -43,8 +43,8 @@ static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int A_m, i
                          'N', diag, 
                          m, n, 
                          &alpha, 
-                         (const cuFloatComplex*)d_B, lda, 
-                         (cuFloatComplex*)d_A, ldb);
+                         (const cuFloatComplex*)d_A, lda, 
+                         (cuFloatComplex*)d_B, ldb);
     if (rc != 0) {
         fprintf(stderr, "trisolve_cu failed: %d\n", rc);
     }
@@ -680,10 +680,9 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
 
             // Perform triangular solve on device
-            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[blk_idx], 
-                            bsf->d_flat_data + bsf->offsets[diag_idx], 
-                            M, N, 
-                            diag_M, 
+            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[diag_idx], 
+                            bsf->d_flat_data + bsf->offsets[blk_idx], 
+                            M, N, diag_M, 
                             block_pivot, 
                             'R', 'U', 'N');
         }
@@ -698,12 +697,11 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
 
             // Perform triangular solve on device
-            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[blk_idx], 
-                            bsf->d_flat_data + bsf->offsets[diag_idx], 
-                            M, N, 
-                            diag_M, 
+            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[diag_idx], 
+                            bsf->d_flat_data + bsf->offsets[blk_idx], 
+                            M, N, diag_M, 
                             block_pivot, 
-                            'L', 'L', 'U');            
+                            'L', 'L', 'U');          
         }
         // U_12 blocks remain on device for device-side Schur update
 
@@ -955,7 +953,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
             // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
-                // check if in L
+                // Check if block is in L
                 if (!bsf->is_lower[blk_idx] || blk_idx == diag_idx) continue;
                 int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
                 int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
@@ -998,7 +996,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
             // After updating the diagonal block, update the blocks in the same row
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
-                // check if in U
+                // Check if block is in U
                 if (bsf->is_lower[blk_idx] || blk_idx == diag_idx) continue;
                 int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
                 int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);

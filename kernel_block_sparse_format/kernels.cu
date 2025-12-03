@@ -17,15 +17,15 @@ static cusolverDnHandle_t cusolver_handle = NULL;
 // ==================================================================
 extern "C" 
 int gpu_init(void) {
-    cublasStatus_t cublas_status = cublasCreate(&cublas_handle);
-    if (cublas_status != CUBLAS_STATUS_SUCCESS) {
-        fprintf(stderr, "[gpu_init] cublasCreate failed (%d)\n", (int)cublas_status);
+    cublasStatus_t cublas_stat = cublasCreate(&cublas_handle);
+    if (cublas_stat != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "[gpu_init] cublasCreate failed (%d)\n", (int)cublas_stat);
         cublas_handle = NULL;
         return -1;
     }
-    cusolverStatus_t cusolver_status = cusolverDnCreate(&cusolver_handle);
-    if (cusolver_status != CUSOLVER_STATUS_SUCCESS) {
-        fprintf(stderr, "[gpu_init] cusolverDnCreate failed (%d)\n", (int)cusolver_status);
+    cusolverStatus_t cusolver_stat = cusolverDnCreate(&cusolver_handle);
+    if (cusolver_stat != CUSOLVER_STATUS_SUCCESS) {
+        fprintf(stderr, "[gpu_init] cusolverDnCreate failed (%d)\n", (int)cusolver_stat);
         cublasDestroy(cublas_handle);
         cublas_handle = NULL;
         cusolver_handle = NULL;
@@ -41,13 +41,13 @@ extern "C"
 int gpu_finalise(void) {
     int rc = 0;
     if (cublas_handle) {
-        cublasStatus_t cublas_status = cublasDestroy(cublas_handle);
-        if (cublas_status != CUBLAS_STATUS_SUCCESS) rc = -1;
+        cublasStatus_t cublas_stat = cublasDestroy(cublas_handle);
+        if (cublas_stat != CUBLAS_STATUS_SUCCESS) rc = -1;
         cublas_handle = NULL;
     }
     if (cusolver_handle) {
-        cusolverStatus_t cusolver_status = cusolverDnDestroy(cusolver_handle);
-        if (cusolver_status != CUSOLVER_STATUS_SUCCESS) rc = -1;
+        cusolverStatus_t cusolver_stat = cusolverDnDestroy(cusolver_handle);
+        if (cusolver_stat != CUSOLVER_STATUS_SUCCESS) rc = -1;
         cusolver_handle = NULL;
     }
     return rc;
@@ -256,6 +256,9 @@ int block_schur_update_cu(cuFloatComplex* d_C,
 
 // ==================================================================
 // LU factorisation for a single square block using cuSOLVER 
+// 
+// Currently this is not used, as we perform LU factorisation on host side
+// and then upload the factorised blocks to device.
 // ==================================================================
 extern "C"
 int block_getrf_cu(cuFloatComplex* d_A, int n, int lda, int* h_ipiv, int* info)
@@ -268,9 +271,9 @@ int block_getrf_cu(cuFloatComplex* d_A, int n, int lda, int* h_ipiv, int* info)
 
     // Figure out workspace size
     int lwork = 0;
-    cusolverStatus_t cs = cusolverDnCgetrf_bufferSize(cusolver_handle, n, n, (cuComplex*)d_A, lda, &lwork);
-    if (cs != CUSOLVER_STATUS_SUCCESS) {
-        fprintf(stderr, "[block_getrf_cu] bufferSize failed (%d)\n", (int)cs);
+    cusolverStatus_t stat = cusolverDnCgetrf_bufferSize(cusolver_handle, n, n, (cuComplex*)d_A, lda, &lwork);
+    if (stat != CUSOLVER_STATUS_SUCCESS) {
+        fprintf(stderr, "[block_getrf_cu] bufferSize failed (%d)\n", (int)stat);
         return -1;
     }
 
@@ -294,14 +297,14 @@ int block_getrf_cu(cuFloatComplex* d_A, int n, int lda, int* h_ipiv, int* info)
     if (err != cudaSuccess) { cudaFree(d_ipiv); if (d_work) cudaFree(d_work); return -1; }
 
     // Perform LU factorisation
-    cs = cusolverDnCgetrf(cusolver_handle, 
+    stat = cusolverDnCgetrf(cusolver_handle, 
                           n, n, 
                           (cuComplex*)d_A, lda, 
                           (cuComplex*)d_work, 
                           d_ipiv, 
                           d_info);
-    if (cs != CUSOLVER_STATUS_SUCCESS) {
-        fprintf(stderr, "[block_getrf_cu] cusolverDnCgetrf failed (%d)\n", (int)cs);
+    if (stat != CUSOLVER_STATUS_SUCCESS) {
+        fprintf(stderr, "[block_getrf_cu] cusolverDnCgetrf failed (%d)\n", (int)stat);
         cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -1;
     }
 

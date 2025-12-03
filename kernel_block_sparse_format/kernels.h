@@ -16,7 +16,7 @@ int gpu_finalise(void);
 // num_blocks: number of blocks
 // d_row_start,d_M,d_col_start,d_N,d_offsets: per-block metadata (device pointers)
 // d_x: device input vector (length = n)
-// d_y: device output vector (length = m) (accumulated)
+// d_y: device output vector (length = m)
 // ==================================================================
 int matvec_cu(const cuFloatComplex* d_flat_data,
                    int num_blocks,
@@ -33,7 +33,7 @@ int matvec_cu(const cuFloatComplex* d_flat_data,
 //
 // side: 'L' or 'R'
 // uplo: 'L' or 'U'
-// diag: 'U' (unit) or 'N' (non-unit)
+// diag: 'U' or 'N' 
 // m: number of rows of B
 // n: number of columns of B
 // alpha: scalar multiplier
