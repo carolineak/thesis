@@ -7,14 +7,18 @@
 #include "block_sparse_format.h"
 #include "kernels.h"
 
+// ==================================================================
 // LU factorisation with pivoting for a dense matrix_block
+// ==================================================================
 static int block_lu(float complex *blk, int n, int *ipiv) {
     int lda = n;
     lapack_int info = LAPACKE_cgetrf(LAPACK_COL_MAJOR, n, n, (lapack_complex_float*)blk, lda, (lapack_int*)ipiv);
     return (int)info;
 }
 
-// Triangular solve with pivoting
+// =================================================================
+// Triangular solve with pivoting on device
+// ==================================================================
 static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int A_m, int A_n, int B_m, int *ipiv, char side, char uplo, char diag) {
     // d_A: device pointer to block to be overwritten (m x n)
     // d_B: device pointer to LU-factor diagonal block (triangular)
@@ -34,7 +38,7 @@ static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int A_m, i
         }
     }
 
-    // Call trisolve_cu which expects device pointers for A and B and cuFloatComplex alpha
+    // Call trisolve_cu with device pointers for A and B and cuFloatComplex alpha
     int rc = trisolve_cu(side, uplo, 
                          'N', diag, 
                          m, n, 
@@ -46,7 +50,9 @@ static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int A_m, i
     }
 }
 
+// ==================================================================
 // Apply P to vector in-place (forward row swaps recorded in ipiv)
+// ==================================================================
 void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
 {
     if (!vec || !ipiv || n <= 0) return;
@@ -61,8 +67,9 @@ void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
     }
 }
 
-
+// ==================================================================
 // Apply P^T to vector in-place
+// ==================================================================
 void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
 {
     if (!vec || !ipiv || n <= 0) return;
@@ -77,7 +84,9 @@ void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *
     }
 }
 
+// ==================================================================
 // Count total number of elements in flat_data
+// ==================================================================
 static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
 {
     if (!bsf || !bsf->block_sizes) return 0;
@@ -90,7 +99,9 @@ static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
     return total;
 }
 
+// ==================================================================
 // Upload flat_data to device
+// ==================================================================
 int bsf_upload_flat_data(block_sparse_format *bsf)
 {
     if (!bsf) return -1;
@@ -114,6 +125,7 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
         bsf->d_flat_data = NULL;
     }
 
+    // Allocate device memory for flat_data
     cudaError_t err = cudaMalloc((void**)&bsf->d_flat_data, bytes);
     if (err != cudaSuccess) {
         fprintf(stderr, "[bsf_upload_flat_data] cudaMalloc failed: %s\n",
@@ -122,7 +134,7 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
         return -1;
     }
 
-    // flat_data is float complex; cuFloatComplex has the same layout in practice.
+    // Copy data to device
     err = cudaMemcpy(bsf->d_flat_data,
                      (const void*)bsf->flat_data,
                      bytes,
@@ -140,7 +152,9 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
     return 0;
 }
 
+// ==================================================================
 // Download flat_data from device
+// ==================================================================
 int bsf_download_flat_data(block_sparse_format *bsf)
 {
     if (!bsf) return -1;
@@ -155,6 +169,7 @@ int bsf_download_flat_data(block_sparse_format *bsf)
 
     size_t bytes = numel * sizeof(cuFloatComplex);
 
+    // Copy data to host
     cudaError_t err = cudaMemcpy((void*)bsf->flat_data,
                                  (const void*)bsf->d_flat_data,
                                  bytes,
