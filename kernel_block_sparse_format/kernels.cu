@@ -6,53 +6,56 @@
 #include <cusolverDn.h>
 #include <complex.h>
 
-// Helper to print CUDA errors
-static void report_cuda_error(const char *msg, cudaError_t err) {
-    fprintf(stderr, "[kernel] %s: %s\n",
-            msg,
-            cudaGetErrorString(err));
-}
-
+// ==================================================================
 // Global persistent handles for cuBLAS and cuSOLVER
-static cublasHandle_t g_cublas = NULL;
-static cusolverDnHandle_t g_cusolver = NULL;
+// ==================================================================
+static cublasHandle_t cublas_handle = NULL;
+static cusolverDnHandle_t cusolver_handle = NULL;
 
-// Initialize GPU libraries
-extern "C" int bsf_gpu_init(void) {
-    cublasStatus_t cst = cublasCreate(&g_cublas);
-    if (cst != CUBLAS_STATUS_SUCCESS) {
-        fprintf(stderr, "[bsf_gpu_init] cublasCreate failed (%d)\n", (int)cst);
-        g_cublas = NULL;
+// ==================================================================
+// Initialise CUDA handles
+// ==================================================================
+extern "C" 
+int gpu_init(void) {
+    cublasStatus_t cublas_status = cublasCreate(&cublas_handle);
+    if (cublas_status != CUBLAS_STATUS_SUCCESS) {
+        fprintf(stderr, "[gpu_init] cublasCreate failed (%d)\n", (int)cublas_status);
+        cublas_handle = NULL;
         return -1;
     }
-    cusolverStatus_t cus = cusolverDnCreate(&g_cusolver);
-    if (cus != CUSOLVER_STATUS_SUCCESS) {
-        fprintf(stderr, "[bsf_gpu_init] cusolverDnCreate failed (%d)\n", (int)cus);
-        cublasDestroy(g_cublas);
-        g_cublas = NULL;
-        g_cusolver = NULL;
-        return -2;
+    cusolverStatus_t cusolver_status = cusolverDnCreate(&cusolver_handle);
+    if (cusolver_status != CUSOLVER_STATUS_SUCCESS) {
+        fprintf(stderr, "[gpu_init] cusolverDnCreate failed (%d)\n", (int)cusolver_status);
+        cublasDestroy(cublas_handle);
+        cublas_handle = NULL;
+        cusolver_handle = NULL;
+        return -1;
     }
     return 0;
 }
 
-// Finalize GPU libraries
-extern "C" int bsf_gpu_finalize(void) {
+// ==================================================================
+// Finalise CUDA handles
+// ==================================================================
+extern "C" 
+int gpu_finalise(void) {
     int rc = 0;
-    if (g_cublas) {
-        cublasStatus_t cst = cublasDestroy(g_cublas);
-        if (cst != CUBLAS_STATUS_SUCCESS) rc = -1;
-        g_cublas = NULL;
+    if (cublas_handle) {
+        cublasStatus_t cublas_status = cublasDestroy(cublas_handle);
+        if (cublas_status != CUBLAS_STATUS_SUCCESS) rc = -1;
+        cublas_handle = NULL;
     }
-    if (g_cusolver) {
-        cusolverStatus_t cus = cusolverDnDestroy(g_cusolver);
-        if (cus != CUSOLVER_STATUS_SUCCESS) rc = -2;
-        g_cusolver = NULL;
+    if (cusolver_handle) {
+        cusolverStatus_t cusolver_status = cusolverDnDestroy(cusolver_handle);
+        if (cusolver_status != CUSOLVER_STATUS_SUCCESS) rc = -1;
+        cusolver_handle = NULL;
     }
     return rc;
 }
 
-// Use cuBLAS to perform a per-block GEMV on the device. Metadata arrays are host-side.
+// ==================================================================
+// Matrix-vector multiplication for block sparse format using cuBLAS
+// ==================================================================
 extern "C"
 int matvec_cu(const cuFloatComplex* d_flat_data,
                    int num_blocks,
@@ -66,9 +69,9 @@ int matvec_cu(const cuFloatComplex* d_flat_data,
 {
     if (!d_flat_data || !h_row_start || !h_M || !h_col_start || !h_N || !h_offsets || !d_x || !d_y) return -1;
     
-    if (!g_cublas) {
-        fprintf(stderr, "[matvec_cu] cuBLAS not initialized\n");
-        return -2;
+    if (!cublas_handle) {
+        fprintf(stderr, "[matvec_cu] cuBLAS not initialised\n");
+        return -1;
     }
 
     cuFloatComplex alpha = make_cuFloatComplex(1.0f, 0.0f);
@@ -83,79 +86,85 @@ int matvec_cu(const cuFloatComplex* d_flat_data,
 
         if (M <= 0 || N <= 0) continue;
 
-        const cuFloatComplex* A = d_flat_data + offset; // device pointer to block (col-major, lda=M)
+        // Pointers to current block and vectors
+        const cuFloatComplex* A = d_flat_data + offset;
         const cuFloatComplex* x = d_x + col_start;
         cuFloatComplex* y = d_y + row_start;
 
-        // cublasCgemv(handle, trans, m, n, &alpha, A, lda, x, incx, &beta, y, incy)
-        cublasStatus_t stat = cublasCgemv(g_cublas, CUBLAS_OP_N, M, N, (const cuComplex*)&alpha, (const cuComplex*)A, M, (const cuComplex*)x, 1, (const cuComplex*)&beta, (cuComplex*)y, 1);
+        // Call cuBLAS gemv for this block
+        cublasStatus_t stat = cublasCgemv(cublas_handle, 
+                                          CUBLAS_OP_N, 
+                                          M, N, 
+                                          (const cuComplex*)&alpha, 
+                                          (const cuComplex*)A, M, 
+                                          (const cuComplex*)x, 1, 
+                                          (const cuComplex*)&beta, 
+                                          (cuComplex*)y, 1);
         if (stat != CUBLAS_STATUS_SUCCESS) {
-            fprintf(stderr, "[matvec_cu] cublasCgemv failed for block %d (M=%d,N=%d) status=%d\n", k, M, N, (int)stat);
-            return -3;
+            fprintf(stderr, "[matvec_cu] cublasCgemv failed for block %d (M=%d,N=%d) status=%d\n", 
+                             k, M, N, (int)stat);
+            return -1;
         }
     }
     return 0;
 }
-
-// Triangular solve using cuBLAS: wraps cublasCtrsm
-extern "C"
+// ==================================================================
+// Triangular solve for block sparse format using cuBLAS
+// ==================================================================
+extern "C" 
 int trisolve_cu(char side,
                 char uplo,
                 char trans,
                 char diag,
                 int m,
                 int n,
-                const cuFloatComplex* alpha_host,
-                const cuFloatComplex* A_host,
+                const cuFloatComplex* alpha,
+                const cuFloatComplex* d_A,
                 int lda,
-                cuFloatComplex* B_host,
+                cuFloatComplex* d_B,
                 int ldb)
 {
-    if (!alpha_host || !A_host || !B_host) return -1;
+    if (!alpha || !d_A || !d_B) return -1;
 
-    // Map char args to cuBLAS enums
+    // Map the char arguments to cuBLAS enums
     cublasSideMode_t sideMode = (side == 'L' || side == 'l') ? CUBLAS_SIDE_LEFT : CUBLAS_SIDE_RIGHT;
     cublasFillMode_t uploMode = (uplo == 'L' || uplo == 'l') ? CUBLAS_FILL_MODE_LOWER : CUBLAS_FILL_MODE_UPPER;
     cublasOperation_t transMode = (trans == 'N' || trans == 'n') ? CUBLAS_OP_N : CUBLAS_OP_T;
     cublasDiagType_t diagMode = (diag == 'U' || diag == 'u') ? CUBLAS_DIAG_UNIT : CUBLAS_DIAG_NON_UNIT;
 
-    int M = m;
-    int N = n;
-
-    // Treat A_host and B_host as device pointers (caller must ensure data is on device)
-    const cuFloatComplex* d_A = (const cuFloatComplex*)A_host;
-    cuFloatComplex* d_B = (cuFloatComplex*)B_host;
-
-    if (!g_cublas) {
-        fprintf(stderr, "[trisolve_cu] cuBLAS not initialized\n");
-        return -2;
+    if (!cublas_handle) {
+        fprintf(stderr, "[trisolve_cu] cuBLAS not initialised\n");
+        return -1;
     }
 
-    cuFloatComplex alpha = *alpha_host;
-
     // Call cuBLAS trsm with device pointers using global handle
-    cublasStatus_t stat = cublasCtrsm(g_cublas, sideMode, uploMode, transMode, diagMode,
-                       M, N,
-                       (const cuComplex*)&alpha,
+    cublasStatus_t stat = cublasCtrsm(cublas_handle, sideMode, uploMode, transMode, diagMode,
+                       m, n,
+                       (const cuComplex*)alpha,
                        (const cuComplex*)d_A, lda,
                        (cuComplex*)d_B, ldb);
     if (stat != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[trisolve_cu] cublasCtrsm failed status=%d\n", (int)stat);
-        return -3;
+        return -1;
     }
     return 0;
 }
 
-// Kernel to apply pivots to a device block in-place.
-__global__ void apply_pivots_kernel(cuFloatComplex* d_A, int lda, int ncols, const int* d_ipiv, int m)
+// ==================================================================
+// Kernel to apply pivots to a device block in-place
+// ==================================================================
+__global__ void apply_pivots_kernel(cuFloatComplex* d_A, int lda, int num_cols, const int* d_ipiv, int m)
 {
     int i = blockIdx.x;
     if (i >= m) return;
+
     int piv = d_ipiv[i] - 1; // ipiv is 1-based
     if (piv == i || piv < 0) return;
+    if (piv >= m) return;
+
     // Only perform swap when pivot index > i to avoid double-swapping
     if (piv > i) {
-        for (int c = threadIdx.x; c < ncols; c += blockDim.x) {
+        for (int c = threadIdx.x; c < num_cols; c += blockDim.x) {
             int idx1 = i + c * lda;
             int idx2 = piv + c * lda;
             cuFloatComplex tmp = d_A[idx1];
@@ -165,46 +174,54 @@ __global__ void apply_pivots_kernel(cuFloatComplex* d_A, int lda, int ncols, con
     }
 }
 
-// Host wrapper: copy ipiv to device and launch pivot kernel
-extern "C" int apply_pivots_cu(cuFloatComplex* d_A, int lda, int ncols, const int* h_ipiv, int m)
+// ==================================================================
+// Wrapper to apply pivots to a device block in-place
+// ==================================================================
+extern "C" 
+int apply_pivots_cu(cuFloatComplex* d_A, int lda, int num_cols, const int* h_ipiv, int m)
 {
     if (!d_A || !h_ipiv || m <= 0) return -1;
+
+    // Copy pivot array to device
     int *d_ipiv = NULL;
     size_t bytes = (size_t)m * sizeof(int);
-    cudaError_t cerr = cudaMalloc((void**)&d_ipiv, bytes);
-    if (cerr != cudaSuccess) {
-        report_cuda_error("apply_pivots_cu cudaMalloc failed", cerr);
-        return -2;
+    cudaError_t err = cudaMalloc((void**)&d_ipiv, bytes);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[apply_pivots_cu] cudaMalloc failed\n");
+        return -1;
     }
-    cerr = cudaMemcpy(d_ipiv, (const void*)h_ipiv, bytes, cudaMemcpyHostToDevice);
-    if (cerr != cudaSuccess) {
-        report_cuda_error("apply_pivots_cu cudaMemcpy H2D failed", cerr);
+    err = cudaMemcpy(d_ipiv, (const void*)h_ipiv, bytes, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[apply_pivots_cu] cudaMemcpy H2D failed\n");
         cudaFree(d_ipiv);
-        return -3;
+        return -1;
     }
 
-    int threads = 128;
+    // Launch kernel to apply pivots
+    int threads = 128; // Number of threads per block, can be tuned, not above 1024
     dim3 grid(m);
     dim3 block(threads);
-    apply_pivots_kernel<<<grid, block>>>(d_A, lda, ncols, d_ipiv, m);
-    cerr = cudaGetLastError();
-    if (cerr != cudaSuccess) {
-        report_cuda_error("apply_pivots_kernel launch failed", cerr);
+    apply_pivots_kernel<<<grid, block>>>(d_A, lda, num_cols, d_ipiv, m);
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[apply_pivots_cu] apply_pivots_kernel launch failed\n");
         cudaFree(d_ipiv);
-        return -4;
+        return -1;
     }
-    cerr = cudaDeviceSynchronize();
-    if (cerr != cudaSuccess) {
-        report_cuda_error("apply_pivots_kernel sync failed", cerr);
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[apply_pivots_cu] apply_pivots_kernel sync failed\n");
         cudaFree(d_ipiv);
-        return -5;
+        return -1;
     }
 
     cudaFree(d_ipiv);
     return 0;
 }
 
-// Device Schur update: C := C - A * B using cuBLAS
+// ==================================================================
+// Schur update for blocks using cuBLAS
+// ==================================================================
 extern "C"
 int block_schur_update_cu(cuFloatComplex* d_C,
                               const cuFloatComplex* d_A,
@@ -213,16 +230,17 @@ int block_schur_update_cu(cuFloatComplex* d_C,
 {
     if (!d_C || !d_A || !d_B) return -1;
 
-    if (!g_cublas) {
-        fprintf(stderr, "[block_schur_update_cu] cuBLAS not initialized\n");
-        return -2;
+    if (!cublas_handle) {
+        fprintf(stderr, "[block_schur_update_cu] cuBLAS not initialised\n");
+        return -1;
     }
 
+    // Set alpha and beta for C = C - A*B
     cuFloatComplex alpha = make_cuFloatComplex(-1.0f, 0.0f);
     cuFloatComplex beta  = make_cuFloatComplex(1.0f, 0.0f);
 
-    // cublasCgemm(handle, transA, transB, m, n, k, &alpha, A, lda, B, ldb, &beta, C, ldc)
-    cublasStatus_t stat = cublasCgemm(g_cublas, CUBLAS_OP_N, CUBLAS_OP_N,
+   // Call cuBLAS gemm with device pointers using global handle
+    cublasStatus_t stat = cublasCgemm(cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N,
                        m, n, k,
                        (const cuComplex*)&alpha,
                        (const cuComplex*)d_A, m,
@@ -231,66 +249,77 @@ int block_schur_update_cu(cuFloatComplex* d_C,
                        (cuComplex*)d_C, m);
     if (stat != CUBLAS_STATUS_SUCCESS) {
         fprintf(stderr, "[block_schur_update_cu] cublasCgemm failed status=%d\n", (int)stat);
-        return -3;
+        return -1;
     }
     return 0;
 }
 
-// LU on device for a single square block using cuSOLVER (in-place)
+// ==================================================================
+// LU factorisation for a single square block using cuSOLVER 
+// ==================================================================
 extern "C"
 int block_getrf_cu(cuFloatComplex* d_A, int n, int lda, int* h_ipiv, int* info)
 {
     if (!d_A || n <= 0 || !h_ipiv || !info) return -1;
-    if (!g_cusolver) {
-        fprintf(stderr, "[block_getrf_cu] cuSOLVER not initialized\n");
-        return -2;
+    if (!cusolver_handle) {
+        fprintf(stderr, "[block_getrf_cu] cuSOLVER not initialised\n");
+        return -1;
     }
 
+    // Figure out workspace size
     int lwork = 0;
-    cusolverStatus_t cs = cusolverDnCgetrf_bufferSize(g_cusolver, n, n, (cuComplex*)d_A, lda, &lwork);
+    cusolverStatus_t cs = cusolverDnCgetrf_bufferSize(cusolver_handle, n, n, (cuComplex*)d_A, lda, &lwork);
     if (cs != CUSOLVER_STATUS_SUCCESS) {
         fprintf(stderr, "[block_getrf_cu] bufferSize failed (%d)\n", (int)cs);
-        return -3;
+        return -1;
     }
 
+    // Allocate workspace on device
     cuFloatComplex *d_work = NULL;
     if (lwork > 0) {
-        cudaError_t cerr = cudaMalloc((void**)&d_work, (size_t)lwork * sizeof(cuFloatComplex));
-        if (cerr != cudaSuccess) {
-            report_cuda_error("block_getrf_cu cudaMalloc workspace failed", cerr);
-            return -4;
+        cudaError_t err = cudaMalloc((void**)&d_work, (size_t)lwork * sizeof(cuFloatComplex));
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[block_getrf_cu] cudaMalloc workspace failed\n");
+            return -1;
         }
     }
 
+    // Allocate device memory for pivot array and info
     int *d_ipiv = NULL;
     int *d_info = NULL;
-    cudaError_t cerr;
-    cerr = cudaMalloc((void**)&d_ipiv, n * sizeof(int));
-    if (cerr != cudaSuccess) { if (d_work) cudaFree(d_work); return -5; }
-    cerr = cudaMalloc((void**)&d_info, sizeof(int));
-    if (cerr != cudaSuccess) { cudaFree(d_ipiv); if (d_work) cudaFree(d_work); return -6; }
+    cudaError_t err;
+    err = cudaMalloc((void**)&d_ipiv, n * sizeof(int));
+    if (err != cudaSuccess) { if (d_work) cudaFree(d_work); return -1; }
+    err = cudaMalloc((void**)&d_info, sizeof(int));
+    if (err != cudaSuccess) { cudaFree(d_ipiv); if (d_work) cudaFree(d_work); return -1; }
 
-    cs = cusolverDnCgetrf(g_cusolver, n, n, (cuComplex*)d_A, lda, (cuComplex*)d_work, d_ipiv, d_info);
+    // Perform LU factorisation
+    cs = cusolverDnCgetrf(cusolver_handle, 
+                          n, n, 
+                          (cuComplex*)d_A, lda, 
+                          (cuComplex*)d_work, 
+                          d_ipiv, 
+                          d_info);
     if (cs != CUSOLVER_STATUS_SUCCESS) {
         fprintf(stderr, "[block_getrf_cu] cusolverDnCgetrf failed (%d)\n", (int)cs);
-        cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -7;
+        cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -1;
     }
 
     // copy ipiv and info back to host
-    cerr = cudaMemcpy(h_ipiv, d_ipiv, n * sizeof(int), cudaMemcpyDeviceToHost);
-    if (cerr != cudaSuccess) {
-        report_cuda_error("block_getrf_cu cudaMemcpy ipiv D2H failed", cerr);
-        cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -8;
+    err = cudaMemcpy(h_ipiv, d_ipiv, n * sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[block_getrf_cu] cudaMemcpy ipiv D2H failed\n");
+        cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -1;
     }
     int info_dev = 0;
-    cerr = cudaMemcpy(&info_dev, d_info, sizeof(int), cudaMemcpyDeviceToHost);
-    if (cerr != cudaSuccess) {
-        report_cuda_error("block_getrf_cu cudaMemcpy info D2H failed", cerr);
-        cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -9;
+    err = cudaMemcpy(&info_dev, d_info, sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        fprintf(stderr, "[block_getrf_cu] cudaMemcpy info D2H failed\n");
+        cudaFree(d_ipiv); cudaFree(d_info); if (d_work) cudaFree(d_work); return -1;
     }
     *info = info_dev;
 
-    // free temps
+    // Free device memory
     cudaFree(d_ipiv);
     cudaFree(d_info);
     if (d_work) cudaFree(d_work);

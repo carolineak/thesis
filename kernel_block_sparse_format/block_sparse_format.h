@@ -56,18 +56,6 @@ static inline void block_slice_free(block_slice *s) {
     s->num_blocks = 0;
 }
 
-
-// void bsf_free_device_flat_data(block_sparse_format *bsf)
-// {
-//     if (!bsf) return;
-
-//     if (bsf->d_flat_data) {
-//         cudaFree(bsf->d_flat_data);
-//         bsf->d_flat_data = NULL;
-//     }
-//     bsf->flat_on_device = 0;
-// }
-
 // ===== Block_sparse_format helpers =====
 static inline void bsf_free(block_sparse_format *bsf) {
     // Free slices

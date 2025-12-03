@@ -15,44 +15,9 @@ static int block_lu(float complex *blk, int n, int *ipiv) {
 }
 
 // Triangular solve with pivoting
-static void block_trsm(float complex *A, float complex *B, int A_m, int A_n, int B_m, int *ipiv, int side, int uplo, int diag) {
-    // A: block to be overwritten (solution)
-    // B: LU factorized block (diagonal)
-    // ipiv: pivot array from LU (optional, can be NULL)
-
-    int m = A_m;
-    int n = A_n;
-    int lda = B_m;
-    int ldb = A_m;
-
-    // Apply pivots ONLY for the Left/Lower (L) step of an LU solve:
-    // This corresponds to B <- P * B before solving L * Y = B.
-    if (ipiv && side == CblasLeft && uplo == CblasLower) {
-        for (int i = 0; i < m; ++i) {
-            int piv = (int)ipiv[i] - 1;   // ipiv is 1-based
-            if (piv != i) {
-                // swap row i <-> piv across all N columns (column-major)
-                for (int j = 0; j < n; ++j) {
-                    float complex tmp = A[i   + ldb*j];
-                    A[i   + ldb*j] = A[piv + ldb*j];
-                    A[piv + ldb*j] = tmp;
-                }
-            }
-        }
-    }
-
-    // Triangular solve
-    cblas_ctrsm(CblasColMajor, side, uplo, CblasNoTrans, diag,
-                m, n, &(float complex){1.0f+0.0f*I},
-                B, lda,
-                A, ldb);
-    
-}
-
-// Triangular solve with pivoting
-static void cuda_block_trsm(cuFloatComplex *A_dev, cuFloatComplex *B_dev, int A_m, int A_n, int B_m, int *ipiv, char side, char uplo, char diag) {
-    // A_dev: device pointer to block to be overwritten (m x n)
-    // B_dev: device pointer to LU-factor diagonal block (triangular)
+static void cuda_block_trsm(cuFloatComplex *d_A, cuFloatComplex *d_B, int A_m, int A_n, int B_m, int *ipiv, char side, char uplo, char diag) {
+    // d_A: device pointer to block to be overwritten (m x n)
+    // d_B: device pointer to LU-factor diagonal block (triangular)
 
     int m = A_m;
     int n = A_n;
@@ -63,29 +28,22 @@ static void cuda_block_trsm(cuFloatComplex *A_dev, cuFloatComplex *B_dev, int A_
 
     // If required, apply pivots to the target block on device
     if (ipiv && (side == 'L' || side == 'l') && (uplo == 'L' || uplo == 'l')) {
-        int rc = apply_pivots_cu(A_dev, ldb, n, ipiv, m);
+        int rc = apply_pivots_cu(d_A, ldb, n, ipiv, m);
         if (rc != 0) {
             fprintf(stderr, "apply_pivots_cu failed: %d\n", rc);
         }
     }
 
     // Call trisolve_cu which expects device pointers for A and B and cuFloatComplex alpha
-    int rc = trisolve_cu(side, uplo, 'N', diag, m, n, &alpha, (const cuFloatComplex*)B_dev, lda, (cuFloatComplex*)A_dev, ldb);
+    int rc = trisolve_cu(side, uplo, 
+                         'N', diag, 
+                         m, n, 
+                         &alpha, 
+                         (const cuFloatComplex*)d_B, lda, 
+                         (cuFloatComplex*)d_A, ldb);
     if (rc != 0) {
         fprintf(stderr, "trisolve_cu failed: %d\n", rc);
     }
-}
-
-// Schur complement update (C = C - A * B)
-static void block_schur_update(float complex *C, float complex *A, float complex *B, int m, int n, int k) {
-    // A: m x k, B: k x n, C: m x n
-    cblas_cgemm(CblasColMajor, CblasNoTrans, CblasNoTrans,
-                m, n, k,
-                &(float complex){-1.0f+0.0f*I},
-                A, m,
-                B, k,
-                &(float complex){1.0f+0.0f*I},
-                C, m);
 }
 
 // Apply P to vector in-place (forward row swaps recorded in ipiv)
@@ -119,6 +77,7 @@ void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *
     }
 }
 
+// Count total number of elements in flat_data
 static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
 {
     if (!bsf || !bsf->block_sizes) return 0;
@@ -131,10 +90,11 @@ static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
     return total;
 }
 
+// Upload flat_data to device
 int bsf_upload_flat_data(block_sparse_format *bsf)
 {
     if (!bsf) return -1;
-    if (!bsf->flat_data) return -2;
+    if (!bsf->flat_data) return -1;
 
     size_t numel = bsf_flat_num_elements(bsf);
     if (numel == 0) {
@@ -159,7 +119,7 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
         fprintf(stderr, "[bsf_upload_flat_data] cudaMalloc failed: %s\n",
                 cudaGetErrorString(err));
         bsf->flat_on_device = 0;
-        return -3;
+        return -1;
     }
 
     // flat_data is float complex; cuFloatComplex has the same layout in practice.
@@ -173,17 +133,18 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
         cudaFree(bsf->d_flat_data);
         bsf->d_flat_data   = NULL;
         bsf->flat_on_device = 0;
-        return -4;
+        return -1;
     }
 
     bsf->flat_on_device = 1;
     return 0;
 }
 
+// Download flat_data from device
 int bsf_download_flat_data(block_sparse_format *bsf)
 {
     if (!bsf) return -1;
-    if (!bsf->flat_data) return -2;
+    if (!bsf->flat_data) return -1;
     if (!bsf->flat_on_device || !bsf->d_flat_data) {
         // Nothing to download or not on device
         return 0;
@@ -201,13 +162,13 @@ int bsf_download_flat_data(block_sparse_format *bsf)
     if (err != cudaSuccess) {
         fprintf(stderr, "[bsf_download_flat_data] cudaMemcpy D2H failed: %s\n",
                 cudaGetErrorString(err));
-        return -3;
+        return -1;
     }
 
     return 0;
 }
 
-// ===========================================================================
+// ==================================================================
 // Create a block_sparse_format matrix
 //
 // Arguments
@@ -219,7 +180,7 @@ int bsf_download_flat_data(block_sparse_format *bsf)
 //   data           : flattened data of matrix blocks
 //
 // Returns 0 on success, <0 on allocation failure
-// ==========================================================================
+// ==================================================================
 int create(block_sparse_format *bsf,
            const int *row_indices,
            const int *col_indices, 
@@ -244,7 +205,7 @@ int create(block_sparse_format *bsf,
     // Copy row/col indices
     bsf->row_indices = (int*)malloc(num_blocks * sizeof(int));
     bsf->col_indices = (int*)malloc(num_blocks * sizeof(int));
-    if (!bsf->row_indices || !bsf->col_indices) return -2;
+    if (!bsf->row_indices || !bsf->col_indices) return -1;
 
     memcpy(bsf->row_indices, row_indices, num_blocks * sizeof(int));
     memcpy(bsf->col_indices, col_indices, num_blocks * sizeof(int));
@@ -300,7 +261,7 @@ int create(block_sparse_format *bsf,
     // Calculate block sizes and offsets
     bsf->block_sizes = (int*)malloc(num_blocks * sizeof(int));
     bsf->offsets     = (int*)malloc(num_blocks * sizeof(int));
-    if (!bsf->block_sizes || !bsf->offsets) return -3;
+    if (!bsf->block_sizes || !bsf->offsets) return -1;
     int total_size = 0;
     for (int i = 0; i < num_blocks; i++) {
         int row = row_indices[i];
@@ -315,7 +276,7 @@ int create(block_sparse_format *bsf,
 
     // Copy flattened data
     bsf->flat_data = (float complex*)malloc(total_size * sizeof(float complex));
-    if (!bsf->flat_data) return -4;
+    if (!bsf->flat_data) return -1;
     memcpy(bsf->flat_data, data, total_size * sizeof(float complex));
 
     // Set size of matrix
@@ -336,13 +297,13 @@ int create(block_sparse_format *bsf,
     return 0;
 }
 
-// ===================================================================
+// ==================================================================
 // Prints a block sparse matrix as a dense matrix
 // Fill in empty blocks with zeros
 // 
 // Arguments
 //   bsf : Block-sparse matrix
-// ===================================================================  
+// ==================================================================  
 void sparse_print_matrix(const block_sparse_format *bsf) {
     if (!bsf) {
         printf("Block sparse format is NULL\n");
@@ -388,7 +349,7 @@ void sparse_print_matrix(const block_sparse_format *bsf) {
     free(dense);
 }
 
-// ===================================================================
+// ==================================================================
 // Compute a matrix-vector product for a block sparse matrix
 //
 // Arguments
@@ -399,7 +360,7 @@ void sparse_print_matrix(const block_sparse_format *bsf) {
 //   len_out  : Length of vec_out
 //
 // Returns 0 on success, <0 on error.
-// ===================================================================
+// ==================================================================
 int sparse_matvec(const block_sparse_format *bsf,
                   const float complex *vec_in,  int len_in,
                   float complex *vec_out,       int len_out)
@@ -409,10 +370,10 @@ int sparse_matvec(const block_sparse_format *bsf,
         return -1;
     }
 
-    // Initialize GPU libraries (persistent handles)
-    if (bsf_gpu_init() != 0) {
-        fprintf(stderr, "[sparse_matvec] bsf_gpu_init failed\n");
-        return -20;
+    // Initialise GPU libraries with persistent handles
+    if (gpu_init() != 0) {
+        fprintf(stderr, "[sparse_matvec] gpu_init failed\n");
+        return -1;
     }
 
     // Upload data to the GPU
@@ -432,7 +393,7 @@ int sparse_matvec(const block_sparse_format *bsf,
     int *h_offsets = (int*)malloc(nb * sizeof(int));
     if (!h_row_start || !h_M || !h_col_start || !h_N || !h_offsets) {
         free(h_row_start); free(h_M); free(h_col_start); free(h_N); free(h_offsets);
-        return -2;
+        return -1;
     }
 
     for (int k = 0; k < nb; ++k) {
@@ -457,20 +418,20 @@ int sparse_matvec(const block_sparse_format *bsf,
     
     if (cudaMalloc((void**)&d_x, bytes_x) != cudaSuccess) {
         fprintf(stderr, "[sparse_matvec] cudaMalloc for d_x failed\n");
-        rc = -3;
+        rc = -1;
     } else if (cudaMalloc((void**)&d_y, bytes_y) != cudaSuccess) {
         fprintf(stderr, "[sparse_matvec] cudaMalloc for d_y failed\n");
-        rc = -4;
+        rc = -1;
     } else {
         // Copy input vector to device
         if (cudaMemcpy(d_x, (const void*)vec_in, bytes_x, cudaMemcpyHostToDevice) != cudaSuccess) {
             fprintf(stderr, "[sparse_matvec] cudaMemcpy H2D failed\n");
-            rc = -5;
+            rc = -1;
         } else {
-            // Initialize d_y to zeros
+            // Initialise d_y to zeros
             if (cudaMemset(d_y, 0, bytes_y) != cudaSuccess) {
                 fprintf(stderr, "[sparse_matvec] cudaMemset failed\n");
-                rc = -6;
+                rc = -1;
             } else {
                 // Call the CUDA block-sparse matvec wrapper
                 rc = matvec_cu(bsf->d_flat_data, nb, h_row_start, h_M, h_col_start, h_N, h_offsets, d_x, d_y);
@@ -480,7 +441,7 @@ int sparse_matvec(const block_sparse_format *bsf,
                     // Copy result back to host
                     if (cudaMemcpy((void*)vec_out, d_y, bytes_y, cudaMemcpyDeviceToHost) != cudaSuccess) {
                         fprintf(stderr, "[sparse_matvec] cudaMemcpy D2H failed\n");
-                        rc = -7;
+                        rc = -1;
                     }
                 }
             }
@@ -522,25 +483,34 @@ int sparse_matvec(const block_sparse_format *bsf,
 // ==================================================================
 int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out, int **received_fill_in_out) {
 
+    // =======================================================================
+    // Check inputs
+    // =======================================================================
     if (!bsf || !fill_in_matrix_out || !received_fill_in_out) return -1;
-
-    *fill_in_matrix_out = NULL;  
-    *fill_in_matrix_size_out = 0; 
-    *received_fill_in_out = NULL;
 
     // Only square block matrices
     if (bsf->num_rows != bsf->num_cols) return -1;
     int num_blocks = bsf->num_blocks;
-
+    
+    // =======================================================================
+    // Prepare for GPU offloading
+    // =======================================================================
     // Upload data to the GPU
     int err = bsf_upload_flat_data(bsf);
     if (err != 0) return err;
-
-    // Initialize GPU libraries (persistent handles)
-    if (bsf_gpu_init() != 0) {
-        fprintf(stderr, "[sparse_lu] bsf_gpu_init failed\n");
-        return -20;
+    
+    // Initialise GPU librariesw with persistent handles
+    if (gpu_init() != 0) {
+        fprintf(stderr, "[sparse_lu] gpu_init failed\n");
+        return -1;
     }
+    
+    // =======================================================================
+    // Allocate arrays and initialise outputs
+    // =======================================================================
+    *fill_in_matrix_out = NULL;  
+    *fill_in_matrix_size_out = 0; 
+    *received_fill_in_out = NULL;
 
     // Allocate global pivot vector 
     bsf->global_pivot = (int*)calloc(bsf->n, sizeof(int));
@@ -584,7 +554,7 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                         break;
                     }
                 }
-                if (A_22_idx < 0) { // Block not present, fill-in will be created and must be moved to dense fill-in matrix
+                if (A_22_idx < 0) { // Block not present
                     received_fill_in[row_idx] = 1;
                     received_fill_in[col_idx] = 1;
                     continue;
@@ -623,13 +593,6 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         }
     }
     
-    // Print fill_in_block_start for debugging
-    // printf("Fill-in block starts:\n");
-    // for (int j = 0; j < bsf->num_rows; j++) {
-    //     printf("%d ", fill_in_block_start[j]);
-    // }
-    // printf("\n");
-    
     // Initialise a dense matrix with the room for the fill-ins
     int fill_in_matrix_size = 0;
     for (int j = 1; j < bsf->num_rows; j++) {
@@ -637,19 +600,11 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     }
     printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
     complex float *fill_in_matrix = (float complex*)calloc((int)fill_in_matrix_size * (int)fill_in_matrix_size, sizeof(float complex));
-    if (!fill_in_matrix) return -2;
+    if (!fill_in_matrix) return -1;
 
-    // Print fill_in_matrix for debugging
-    // for (int r = 0; r < fill_in_matrix_size; ++r) {
-    //     for (int c = 0; c < fill_in_matrix_size; ++c) {
-    //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
-    //     }
-    //     printf("\n");
-    // }
-
-    // ========================================================================
+    // =======================================================================
     // Computation run with actual-sized fill-in matrix
-    // ========================================================================
+    // =======================================================================
     for (int i = 0; i < bsf->num_rows; ++i) {
 
         // printf("\n============== ROW %d ============\n", i);
@@ -663,7 +618,7 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                 break;
             }
         }
-        if (diag_idx < 0) return -3;
+        if (diag_idx < 0) return -1;
 
         int diag_M = range_length(bsf->rows[bsf->row_indices[diag_idx]].range);
         int diag_N = range_length(bsf->cols[bsf->col_indices[diag_idx]].range); 
@@ -681,44 +636,42 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         int info = block_lu(bsf->flat_data + bsf->offsets[diag_idx], diag_N, block_pivot);
         if (info != 0) {
             fprintf(stderr, "[sparse_lu] block_lu failed info=%d\n", info);
-            return -5;
+            return -1;
         }
 
-        // Copy the updated LU factors to device so subsequent device TRSM calls
-        // operate on the updated diagonal.
+        // Copy the updated LU factors to device so subsequent device triangular solve calls
+        // operate on the updated diagonal
         if (bsf->d_flat_data) {
             size_t diag_elems = (size_t)diag_M * (size_t)diag_N;
             size_t bytes_diag = diag_elems * sizeof(cuFloatComplex);
-            cudaError_t cerr = cudaMemcpy(bsf->d_flat_data + bsf->offsets[diag_idx],
+            cudaError_t err = cudaMemcpy(bsf->d_flat_data + bsf->offsets[diag_idx],
                                           (const void*)(bsf->flat_data + bsf->offsets[diag_idx]),
                                           bytes_diag, cudaMemcpyHostToDevice);
-            if (cerr != cudaSuccess) {
-                fprintf(stderr, "[sparse_lu] cudaMemcpy H2D diag block failed: %s\n", cudaGetErrorString(cerr));
-                return -6;
+            if (err != cudaSuccess) {
+                fprintf(stderr, "[sparse_lu] cudaMemcpy H2D diag block failed: %s\n", cudaGetErrorString(err));
+                return -1;
             }
         }
-
-        // // Print matrix after diagonal factorization for debugging
-        // printf("Matrix after LU factorization of diagonal block %d:\n", i);
-        // sparse_print_matrix(bsf);
         
         // Compute L_21 = A_21 * U_11^-1
         for (int jj = 0; jj < bsf->cols[i].num_blocks; ++jj) {
             int blk_idx = bsf->cols[i].indices[jj];
             if (bsf->row_indices[blk_idx] == i) continue;
             if (bsf->row_indices[blk_idx] < i && !received_fill_in[bsf->row_indices[blk_idx]]) continue;
+
             // Set is_lower flag
             bsf->is_lower[blk_idx] = 1;
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
+
             // Perform triangular solve on device
-            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[blk_idx], bsf->d_flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, 'R', 'U', 'N');
+            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[blk_idx], 
+                            bsf->d_flat_data + bsf->offsets[diag_idx], 
+                            M, N, 
+                            diag_M, 
+                            block_pivot, 
+                            'R', 'U', 'N');
         }
-
-        // // Print matrix after diagonal factorization for debugging
-        // printf("Matrix after computing L_21 in row %d\n", i);
-        // sparse_print_matrix(bsf);
-
         // L_21 blocks remain on device for device-side Schur update
 
         // Compute U_12 = L_11^-1 * P^T * A_12
@@ -728,15 +681,15 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
             if (bsf->col_indices[blk_idx] < i && !received_fill_in[bsf->col_indices[blk_idx]]) continue;
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
+
             // Perform triangular solve on device
-            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[blk_idx], bsf->d_flat_data + bsf->offsets[diag_idx], M, N, diag_M, block_pivot, 'L', 'L', 'U');            
-            
+            cuda_block_trsm(bsf->d_flat_data + bsf->offsets[blk_idx], 
+                            bsf->d_flat_data + bsf->offsets[diag_idx], 
+                            M, N, 
+                            diag_M, 
+                            block_pivot, 
+                            'L', 'L', 'U');            
         }
-
-        // // Print matrix after diagonal factorization for debugging
-        // printf("Matrix after computing U_12 in row %d\n", i);
-        // sparse_print_matrix(bsf);
-
         // U_12 blocks remain on device for device-side Schur update
 
         // Schur complement update
@@ -748,7 +701,8 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                 int L_21_idx = bsf->cols[i].indices[jj];
                 if (bsf->row_indices[L_21_idx] == i) continue;
                 if (bsf->row_indices[L_21_idx] < i && !received_fill_in[bsf->row_indices[L_21_idx]]) continue;
-                // Find intersecting block (A_22)
+
+                // Find intersecting block to update (A_22)
                 int row_idx = bsf->row_indices[L_21_idx];
                 int col_idx = bsf->col_indices[U_12_idx];
                 int A_22_idx = -1;
@@ -758,103 +712,102 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                         break;
                     }
                 }
-                if (A_22_idx < 0) { // Block not present, fill-in will be created and must be moved to dense fill-in matrix
-                    // Get row and column ranges
+                if (A_22_idx < 0) { // Block not present, fill-in will be created              
+                    // We perform Schur update on device and write back to the fill_in_matrix
+
+                    // Dimensions of the fill-in block
                     const int M = range_length(bsf->rows[row_idx].range);
                     const int N = range_length(bsf->cols[col_idx].range);
-                    // Perform Schur update on device and write back to fill_in_matrix slice
                     const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
                     size_t elems = (size_t)M * (size_t)N;
                     size_t bytes = elems * sizeof(cuFloatComplex);
 
-                    // Allocate device buffer for C (fill-in block) and copy initial values from host fill_in_matrix
-                    cuFloatComplex *d_C = NULL;
-                    cudaError_t cerr = cudaMalloc((void**)&d_C, bytes);
-                    if (cerr != cudaSuccess) {
-                        fprintf(stderr, "[sparse_lu] cudaMalloc for fill-in block failed: %s\n", cudaGetErrorString(cerr));
-                        return -9;
+                    // Allocate device buffer for fill-in block and copy initial values from host fill_in_matrix
+                    cuFloatComplex *d_fill_in = NULL;
+                    cudaError_t err = cudaMalloc((void**)&d_fill_in, bytes);
+                    if (err != cudaSuccess) {
+                        fprintf(stderr, "[sparse_lu] cudaMalloc for fill-in block failed: %s\n", cudaGetErrorString(err));
+                        return -1;
                     }
 
-                    // Prepare host temporary buffer containing current C (from fill_in_matrix)
-                    cuFloatComplex *hC = (cuFloatComplex*)malloc(bytes);
-                    if (!hC) {
-                        cudaFree(d_C);
-                        return -10;
+                    // Prepare a temporary host buffer to copy fill-in block
+                    cuFloatComplex *h_fill_in = (cuFloatComplex*)malloc(bytes);
+                    if (!h_fill_in) {
+                        cudaFree(d_fill_in);
+                        return -1;
                     }
                     for (int c = 0; c < N; ++c) {
                         for (int r = 0; r < M; ++r) {
                             int idx = r + c*M;
                             float realv = crealf(fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size]);
                             float imagv = cimagf(fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size]);
-                            hC[idx].x = realv;
-                            hC[idx].y = imagv;
+                            h_fill_in[idx].x = realv;
+                            h_fill_in[idx].y = imagv;
                         }
                     }
 
-                    cerr = cudaMemcpy(d_C, hC, bytes, cudaMemcpyHostToDevice);
-                    if (cerr != cudaSuccess) {
-                        fprintf(stderr, "[sparse_lu] cudaMemcpy H2D fill-in C failed: %s\n", cudaGetErrorString(cerr));
-                        free(hC);
-                        cudaFree(d_C);
-                        return -11;
+                    // Copy initial fill-in block to device
+                    err = cudaMemcpy(d_fill_in, h_fill_in, bytes, cudaMemcpyHostToDevice);
+                    if (err != cudaSuccess) {
+                        fprintf(stderr, "[sparse_lu] cudaMemcpy H2D fill-in C failed: %s\n", cudaGetErrorString(err));
+                        free(h_fill_in);
+                        cudaFree(d_fill_in);
+                        return -1;
                     }
 
-                    // Device pointers for A and B
-                    const cuFloatComplex *d_A = bsf->d_flat_data + bsf->offsets[L_21_idx];
-                    const cuFloatComplex *d_B = bsf->d_flat_data + bsf->offsets[U_12_idx];
+                    // Device pointers for L_21 and U_12
+                    const cuFloatComplex *d_L_21 = bsf->d_flat_data + bsf->offsets[L_21_idx];
+                    const cuFloatComplex *d_U_12 = bsf->d_flat_data + bsf->offsets[U_12_idx];
 
-                    int rc = block_schur_update_cu(d_C, d_A, d_B, M, N, K);
+                    // Perform Schur update on device: A_22 = A_22 - L_21 * U_12
+                    int rc = block_schur_update_cu(d_fill_in, d_L_21, d_U_12, M, N, K);
                     if (rc != 0) {
                         fprintf(stderr, "[sparse_lu] block_schur_update_cu failed: %d\n", rc);
-                        free(hC);
-                        cudaFree(d_C);
-                        return -12;
+                        free(h_fill_in);
+                        cudaFree(d_fill_in);
+                        return -1;
                     }
 
-                    // Copy result back to host temporary and store into fill_in_matrix
-                    cerr = cudaMemcpy(hC, d_C, bytes, cudaMemcpyDeviceToHost);
-                    if (cerr != cudaSuccess) {
-                        fprintf(stderr, "[sparse_lu] cudaMemcpy D2H fill-in C failed: %s\n", cudaGetErrorString(cerr));
-                        free(hC);
-                        cudaFree(d_C);
-                        return -13;
+                    // Copy result back to the host and store in fill_in_matrix
+                    err = cudaMemcpy(h_fill_in, d_fill_in, bytes, cudaMemcpyDeviceToHost);
+                    if (err != cudaSuccess) {
+                        fprintf(stderr, "[sparse_lu] cudaMemcpy D2H fill-in C failed: %s\n", cudaGetErrorString(err));
+                        free(h_fill_in);
+                        cudaFree(d_fill_in);
+                        return -1;
                     }
                     for (int c = 0; c < N; ++c) {
                         for (int r = 0; r < M; ++r) {
                             int idx = r + c*M;
-                            fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = hC[idx].x + hC[idx].y * I;
+                            fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = h_fill_in[idx].x + h_fill_in[idx].y * I;
                         }
                     }
 
-                    free(hC);
-                    cudaFree(d_C);
-                    continue; // Skip the rest of the loop, as there is no existing block to update
+                    free(h_fill_in);
+                    cudaFree(d_fill_in);
+                    continue; 
                 }
                 const int M = range_length(bsf->rows[bsf->row_indices[A_22_idx]].range);
                 const int N = range_length(bsf->cols[bsf->col_indices[A_22_idx]].range);
                 const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
-                // Perform Schur update on device: C := C - A * B
+                // Perform Schur update on device: A_22 = A_22 - L_21 * U_12
                 {
                     cuFloatComplex *d_C = bsf->d_flat_data + bsf->offsets[A_22_idx];
-                    const cuFloatComplex *d_A = bsf->d_flat_data + bsf->offsets[L_21_idx];
-                    const cuFloatComplex *d_B = bsf->d_flat_data + bsf->offsets[U_12_idx];
-                    int rc = block_schur_update_cu(d_C, d_A, d_B, M, N, K);
+                    const cuFloatComplex *d_L_21 = bsf->d_flat_data + bsf->offsets[L_21_idx];
+                    const cuFloatComplex *d_U_12 = bsf->d_flat_data + bsf->offsets[U_12_idx];
+                    int rc = block_schur_update_cu(d_C, d_L_21, d_U_12, M, N, K);
                     if (rc != 0) {
                         fprintf(stderr, "[sparse_lu] block_schur_update_cu failed for block %d: %d\n", A_22_idx, rc);
-                        return -14;
+                        return -1;
                     }
                 }
             }
         }
 
-        // print bsf after each outer iteration for debugging
-        // printf ("Matrix after processing row %d:\n", i);
-        // sparse_print_matrix(bsf);
-
     }        
     
     // After completing device-side Schur updates, download full flat_data
-    // from device so host-side fill-in moving/zeroing uses the updated values.
+    // from device so host-side fill-in moving/zeroing uses the updated values
     err = bsf_download_flat_data(bsf);
     if (err != 0) return err;
 
@@ -888,7 +841,6 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                     }
                 }
             }
-            // printf("Moved block %d at (%d, %d) to fill-in matrix and zeroed/made identity in original matrix\n", k, row_idx, col_idx);
         }
     }
 
@@ -918,12 +870,17 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     //     }
     // }
 
+    // =======================================================================
+    // Set outputs and clean up
+    // =======================================================================
     *fill_in_matrix_out = fill_in_matrix;
     *fill_in_matrix_size_out = fill_in_matrix_size;
     *received_fill_in_out = received_fill_in;
 
     free(block_start);
     free(fill_in_block_start);
+
+    gpu_finalise();
 
     return 0;
 }
@@ -945,7 +902,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
 
     // Internal vector x to save original b
     float complex *x = (float complex*)malloc(bsf->m * sizeof(float complex));
-    if (!x) return -2;
+    if (!x) return -1;
     memcpy(x, b, bsf->m * sizeof(float complex));
 
     // Forward solve Ly = b
@@ -960,7 +917,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                     break;
                 }
             }
-            if (diag_idx < 0) { free(x); return -2; }
+            if (diag_idx < 0) { free(x); return -1; }
 
             int row_start = bsf->rows[i].range.start;
             int M = range_length(bsf->rows[i].range);
@@ -1009,7 +966,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                     break;
                 }
             }
-            if (diag_idx < 0) { free(x); return -3; }
+            if (diag_idx < 0) { free(x); return -1; }
 
             int row_start = bsf->rows[i].range.start;
             int M = range_length(bsf->rows[i].range);
@@ -1041,7 +998,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
         }
     } else {
         free(x);
-        return -4; 
+        return -1; 
     }
     free(x);
     return 0;
@@ -1062,7 +1019,7 @@ int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
     if (!bsf) return -1;
     if (bsf->m != bsf->n) {
         fprintf(stderr, "sparse_identity_test: Matrix is not square (m=%d, n=%d)\n", bsf->m, bsf->n);
-        return -2;
+        return -1;
     }
     const int n = bsf->n;
 
@@ -1071,7 +1028,7 @@ int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
     if (!v || !A) {
         free(v); free(A);
         fprintf(stderr, "sparse_identity_test: Allocation failed\n");
-        return -3;
+        return -1;
     }
 
     // Build columns of A by applying U then L to each unit basis vector
@@ -1084,14 +1041,14 @@ int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
         if (sparse_trimul(bsf, v, 'U') != 0) {
             fprintf(stderr, "sparse_identity_test: sparse_trimul('U') failed at column %d\n", j);
             free(v); free(A);
-            return -4;
+            return -1;
         }
 
         // v := L * v
         if (sparse_trimul(bsf, v, 'L') != 0) {
             fprintf(stderr, "sparse_identity_test: sparse_trimul('L') failed at column %d\n", j);
             free(v); free(A);
-            return -5;
+            return -1;
         }
 
         // Store as column j of dense A (col-major storage)
