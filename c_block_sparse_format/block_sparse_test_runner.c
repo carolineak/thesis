@@ -10,6 +10,9 @@
 #include "dense_functions.h"
 #include "check_correctness.h"
 
+// ==================================================================
+// Run matvec test for synthetic test matrices
+// ==================================================================
 void run_matvec_test(int n, int b, int block_structure, int print, double tolerance, int *passed) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -50,6 +53,9 @@ void run_matvec_test(int n, int b, int block_structure, int print, double tolera
     free(y_bsf);
 }
 
+// ==================================================================
+// Run LU and triangular multiplication test for synthetic test matrices
+// ==================================================================
 void run_lu_trimul_test(int n, int b, int block_structure, int print, double tolerance, int *passed) {
     block_sparse_format bsf = {0};
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -193,6 +199,9 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     free(fill_in_piv);
 }
 
+// ==================================================================
+// Run LU identity test for synthetic test matrices
+// ==================================================================
 void run_lu_identity_test(int n, int b, int block_structure) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));

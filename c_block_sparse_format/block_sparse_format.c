@@ -6,11 +6,9 @@
 #include <cblas.h>
 #include "block_sparse_format.h"
 
-// ===========================================================================
-// Helper functions
-// ===========================================================================
-
-// LU factorisation with pivoting for a matrix_block
+// ==================================================================
+// LU factorisation with pivoting for a dense matrix block
+// ==================================================================
 static int block_lu(matrix_block *blk, lapack_int *ipiv) {
     int n = (int)blk->rows;
     int lda = n;
@@ -18,7 +16,9 @@ static int block_lu(matrix_block *blk, lapack_int *ipiv) {
     return (int)info;
 }
 
+// ==================================================================
 // Triangular solve with pivoting
+// ==================================================================
 static void block_trsm(const matrix_block *A, const matrix_block *B, int *ipiv, int side, int uplo, int diag) {
     // A: block to be overwritten (solution)
     // B: LU factorized block (diagonal)
@@ -53,7 +53,9 @@ static void block_trsm(const matrix_block *A, const matrix_block *B, int *ipiv, 
     
 }
 
+// ==================================================================
 // Schur complement update (C = C - A * B)
+// ==================================================================
 static void block_schur_update(matrix_block *C, const matrix_block *A, const matrix_block *B) {
     int m = (int)C->rows;
     int n = (int)C->cols;
@@ -67,7 +69,9 @@ static void block_schur_update(matrix_block *C, const matrix_block *A, const mat
                 C->data, m);
 }
 
+// ==================================================================
 // Apply P to vector in-place (forward row swaps recorded in ipiv)
+// ==================================================================
 void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
 {
     if (!vec || !ipiv || n <= 0) return;
@@ -83,7 +87,9 @@ void apply_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
 }
 
 
+// ==================================================================
 // Apply P^T to vector in-place
+// ==================================================================
 void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *ipiv)
 {
     if (!vec || !ipiv || n <= 0) return;
@@ -100,15 +106,6 @@ void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *
 
 // ===========================================================================
 // Create a block_sparse_format matrix
-//
-// Arguments
-//   bsf        : block_sparse_format (output)
-//   rows       : array of row indices
-//   cols       : array of col indices
-//   values     : array of matrix_block
-//   num_blocks : number of blocks
-//
-// Returns 0 on success, <0 on allocation failure
 // ==========================================================================
 int create(block_sparse_format *bsf,
            const int *rows,
@@ -233,11 +230,7 @@ int create(block_sparse_format *bsf,
 }
 
 // ===================================================================
-// Prints a block sparse matrix as a dense matrix
-// Fill in empty blocks with zeros
-// 
-// Arguments
-//   bsf : Block-sparse matrix
+// Print a block sparse matrix as a dense matrix
 // ===================================================================  
 void sparse_print_matrix(const block_sparse_format *bsf) {
     if (!bsf) {
@@ -344,15 +337,6 @@ void sparse_print_lu(const block_sparse_format *bsf) {
 
 // ===================================================================
 // Compute a matrix-vector product for a block sparse matrix
-//
-// Arguments
-//   bsf      : Block-sparse matrix (column-major blocks)
-//   vec_in   : Dense input vector (length = len_in  == bsf->n)
-//   len_in   : Length of vec_in
-//   vec_out  : Dense output vector (length = len_out == bsf->m)
-//   len_out  : Length of vec_out
-//
-// Returns 0 on success, <0 on error.
 // ===================================================================
 int sparse_matvec(const block_sparse_format *bsf,
                   const float complex *vec_in,  int len_in,
@@ -407,12 +391,7 @@ int sparse_matvec(const block_sparse_format *bsf,
 }
 
 // ==================================================================
-// LU factorisation of block sparse matrix
-//
-// Arguments
-//   bsf : Block-sparse matrix (column-major blocks), modified in place to contain
-//         the LU factors in its blocks.
-// Returns 0 on success, <0 on error.
+// LU factorisation of block sparse matrix without fill-ins
 // ==================================================================
 int sparse_lu(block_sparse_format *bsf) {
     // Only square block matrices
@@ -478,14 +457,6 @@ int sparse_lu(block_sparse_format *bsf) {
 
 // ==================================================================
 // Sparse LU factorisation of block sparse matrix with fill-ins
-//
-// Arguments
-//   bsf : Block-sparse matrix (column-major blocks), modified in place to contain
-//         the LU factors in its blocks.
-//   fill_in_matrix_out : Pointer to dense matrix to store fill-ins (output)
-//   fill_in_matrix_size_out : Pointer to size of fill-in matrix (output)
-//
-// Returns 0 on success, <0 on error.
 // ==================================================================
 int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float **fill_in_matrix_out, int *fill_in_matrix_size_out) {
 
@@ -716,13 +687,6 @@ int sparse_lu_with_fill_ins(block_sparse_format *bsf, complex float **fill_in_ma
 
 // ==================================================================
 // Compute Ax = b, where A is given in block sparse LU format
-//
-// Arguments
-//   bsf : Block-sparse matrix in LU factorized form
-//   b   : Right-hand side vector, solution is written in place
-//   uplo : 'L' for lower triangular solve, 'U' for upper triangular solve
-//
-// Returns 0 on success, <0 on error.
 // ==================================================================
 int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
     // Only square block matrices
@@ -831,14 +795,6 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
 
 // ==================================================================
 // Solve Ax = b, where A is block-sparse triangular in LU format
-//
-// Arguments
-//   bsf  : Block-sparse matrix in LU-factorized form
-//   b    : Right-hand side vector; solution is written in place
-//   uplo : 'L' -> solve L_s * x = b   (forward solve, applies P)
-//           'U' -> solve U   * x = b   (backward solve, no pivots)
-//
-// Returns 0 on success, <0 on error.
 // ==================================================================
 int sparse_trisolve(const block_sparse_format *bsf, float complex *b, char uplo) {
     // Only square block matrices
@@ -949,14 +905,7 @@ int sparse_trisolve(const block_sparse_format *bsf, float complex *b, char uplo)
 
 
 // ===================================================================
-// sparse_identity_test
-//
-// Computes A * I = A for an LU-factorized block-sparse matrix A = L*U.
-// For each column e_j of the identity, applies:
-//   v := U * e_j   then   v := L * v
-// The resulting v is column j of A. Prints the dense A.
-//
-// Returns 0 on success, <0 on error.
+// Compute A * I = A for an LU-factorized block-sparse matrix A = L*U.
 // ===================================================================
 int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
     // Basic checks
@@ -1006,16 +955,7 @@ int sparse_identity_test(const block_sparse_format *bsf, float complex *A) {
 }
 
 // ===================================================================
-// sparse_dense_add
-//
-// Compute: sum = Dense + BSF
-//
-// Arguments
-//   bsf   : Block-sparse matrix (m x n)
-//   dense : Input dense matrix (m x n), row-major
-//   sum     : Output dense matrix (m x n), row-major
-//
-// Both dense and sum must be preallocated arrays of size m*n.
+// Adds a block-sparse matrix to a dense matrix: sum = A + dense
 // ===================================================================
 int sparse_dense_add(const block_sparse_format *bsf,
                      const float complex *dense,
@@ -1050,14 +990,7 @@ int sparse_dense_add(const block_sparse_format *bsf,
     return 0;
 }
 // ===================================================================
-// sparse_to_dense
-//
 // Turn a bsf into a dense matrix (row-major)
-//
-// Arguments
-//   bsf   : Block-sparse matrix 
-//   dense : Output dense matrix
-//
 // ===================================================================
 int sparse_to_dense(const block_sparse_format *bsf, float complex *dense) {
     memset(dense, 0, (size_t)bsf->m * (size_t)bsf->n * sizeof(float complex));

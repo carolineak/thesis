@@ -284,6 +284,9 @@ void sparse_dense_identity_test(int n, const block_sparse_format *bsf, int A_n, 
     free(y);
 }
 
+// ==================================================================
+// Run matvec test for synthetic test matrices
+// ==================================================================
 void run_matvec_test(int n, int b, int block_structure, int print, double tolerance, int *passed) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -324,6 +327,9 @@ void run_matvec_test(int n, int b, int block_structure, int print, double tolera
     free(y_bsf);
 }
 
+// ==================================================================
+// Run LU and triangular multiplication test for synthetic test matrices
+// ==================================================================
 void run_lu_trimul_test(int n, int b, int block_structure, int print, double tolerance, int *passed) {
     block_sparse_format bsf = {0};
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -471,6 +477,9 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     free(fill_in_piv);
 }
 
+// ==================================================================
+// Run LU and triangular multiplication test on binary data file
+// ==================================================================
 void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, char *data) {
     block_sparse_format bsf = {0};
     float complex *fill_in_matrix = NULL;
@@ -591,6 +600,9 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     free(fill_in_piv);
 }
 
+// ==================================================================
+// Run LU identity test for synthetic test matrices
+// ==================================================================
 void run_lu_identity_test(int n, int b, int block_structure, int print) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -700,7 +712,9 @@ void run_lu_identity_test(int n, int b, int block_structure, int print) {
     free(fill_in_piv);
 }
 
-
+// ==================================================================
+// Run LU identity test on binary data file
+// ==================================================================
 void run_lu_identity_test_with_bin_data(char *data, int print) {
     block_sparse_format bsf;
     float complex *fill_in_matrix = NULL;
