@@ -9,17 +9,16 @@
 #include "block_sparse_format.h"
 #include "block_sparse_test_runner.h"
 #include "load_binary_data.h"
-// REMEMBER: export PATH=${PATH}:/usr/local/cuda-13.0/bin
 
 int main(void) {
     // Test parameters
-    const int print           = 2;              // 0=silent, 1=results, 2=show data, 3=show LU
+    const int print           = 1;              // 0=silent, 1=results, 2=show data, 3=show LU
     const double tolerance    = 1e-3;
+    const int block_sizes[]   = {2};
+    const int structures[]    = {0,1,2,3};      // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
     
     int passed = 0, total = 0;
     
-    const int block_sizes[]   = {6};
-    const int structures[]    = {0,1,2,3}; // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
     size_t num_block_sizes = sizeof(block_sizes)/sizeof(block_sizes[0]);
     size_t num_structures = sizeof(structures)/sizeof(structures[0]);
     printf("Running block-sparse tests (%zu sizes × %zu structures)\n\n",
@@ -49,19 +48,7 @@ int main(void) {
         }
     }
 
-    // printf("Test on binary data\n");
-    // // char *data = "/x/users/mhg/til_ck/patch_array/patch_array_8x8.bin";
-    // char *data = "../data/sparse_data_example.bin";
-    // run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
-    // // run_lu_identity_test_with_bin_data(data);
-
-    // debug_print_input_bin(data);
-
-    printf("All tests completed. Passed %d out of %d tests.\n", passed, total);
+    printf("\nAll tests completed. Passed %d out of %d tests.\n", passed, total);
 
     return 0;
 }
-
-
-
-

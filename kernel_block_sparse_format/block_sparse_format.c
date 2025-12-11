@@ -8,7 +8,7 @@
 #include "kernels.h"
 
 // ==================================================================
-// LU factorisation with pivoting for a dense matrix_block
+// LU factorisation with pivoting for a dense matrix block
 // ==================================================================
 static int block_lu(float complex *blk, int n, int *ipiv) {
     int lda = n;
@@ -95,7 +95,7 @@ void apply_inverse_pivot_to_vector(float complex *vec, int n, const lapack_int *
 // ==================================================================
 // Count total number of elements in flat_data
 // ==================================================================
-static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
+static size_t flat_num_elements(const block_sparse_format *bsf)
 {
     if (!bsf || !bsf->block_sizes) return 0;
 
@@ -110,12 +110,12 @@ static size_t bsf_flat_num_elements(const block_sparse_format *bsf)
 // ==================================================================
 // Upload flat_data to device
 // ==================================================================
-int bsf_upload_flat_data(block_sparse_format *bsf)
+int upload_flat_data(block_sparse_format *bsf)
 {
     if (!bsf) return -1;
     if (!bsf->flat_data) return -1;
 
-    size_t numel = bsf_flat_num_elements(bsf);
+    size_t numel = flat_num_elements(bsf);
     if (numel == 0) {
         // Nothing to upload
         if (bsf->d_flat_data) {
@@ -136,7 +136,7 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
     // Allocate device memory for flat_data
     cudaError_t err = cudaMalloc((void**)&bsf->d_flat_data, bytes);
     if (err != cudaSuccess) {
-        fprintf(stderr, "[bsf_upload_flat_data] cudaMalloc failed: %s\n",
+        fprintf(stderr, "[upload_flat_data] cudaMalloc failed: %s\n",
                 cudaGetErrorString(err));
         bsf->flat_on_device = 0;
         return -1;
@@ -148,7 +148,7 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
                      bytes,
                      cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
-        fprintf(stderr, "[bsf_upload_flat_data] cudaMemcpy H2D failed: %s\n",
+        fprintf(stderr, "[upload_flat_data] cudaMemcpy H2D failed: %s\n",
                 cudaGetErrorString(err));
         cudaFree(bsf->d_flat_data);
         bsf->d_flat_data   = NULL;
@@ -163,7 +163,7 @@ int bsf_upload_flat_data(block_sparse_format *bsf)
 // ==================================================================
 // Download flat_data from device
 // ==================================================================
-int bsf_download_flat_data(block_sparse_format *bsf)
+int download_flat_data(block_sparse_format *bsf)
 {
     if (!bsf) return -1;
     if (!bsf->flat_data) return -1;
@@ -172,7 +172,7 @@ int bsf_download_flat_data(block_sparse_format *bsf)
         return 0;
     }
 
-    size_t numel = bsf_flat_num_elements(bsf);
+    size_t numel = flat_num_elements(bsf);
     if (numel == 0) return 0;
 
     size_t bytes = numel * sizeof(cuFloatComplex);
@@ -183,7 +183,7 @@ int bsf_download_flat_data(block_sparse_format *bsf)
                                  bytes,
                                  cudaMemcpyDeviceToHost);
     if (err != cudaSuccess) {
-        fprintf(stderr, "[bsf_download_flat_data] cudaMemcpy D2H failed: %s\n",
+        fprintf(stderr, "[download_flat_data] cudaMemcpy D2H failed: %s\n",
                 cudaGetErrorString(err));
         return -1;
     }
@@ -379,7 +379,7 @@ int sparse_matvec(const block_sparse_format *bsf,
     }
 
     // Upload data to the GPU
-    int err = bsf_upload_flat_data((block_sparse_format*)bsf);
+    int err = upload_flat_data((block_sparse_format*)bsf);
     if (err != 0) return err;
 
     // Set output to zero
@@ -465,7 +465,7 @@ int sparse_matvec(const block_sparse_format *bsf,
     if (rc != 0) return rc;
 
     // Download from the GPU 
-    err = bsf_download_flat_data((block_sparse_format*)bsf);
+    err = download_flat_data((block_sparse_format*)bsf);
     if (err != 0) return err;
 
     return 0;
@@ -492,7 +492,7 @@ int sparse_lu(block_sparse_format *bsf,
     // Prepare for GPU offloading
     // =======================================================================
     // Upload data to the GPU
-    int err = bsf_upload_flat_data(bsf);
+    int err = upload_flat_data(bsf);
     if (err != 0) return err;
     
     // Initialise GPU librariesw with persistent handles
@@ -628,12 +628,24 @@ int sparse_lu(block_sparse_format *bsf,
             continue;
         }
 
+        // Download diagonal block to host from the device
+        size_t diag_elems = (size_t)diag_M * (size_t)diag_N;
+        size_t bytes_diag = diag_elems * sizeof(cuFloatComplex);
+        cudaError_t err = cudaMemcpy((void*)(bsf->flat_data + bsf->offsets[diag_idx]),
+                                      (const void*)(bsf->d_flat_data + bsf->offsets[diag_idx]),
+                                      bytes_diag, cudaMemcpyDeviceToHost);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "[sparse_lu] cudaMemcpy D2H diag block failed: %s\n", cudaGetErrorString(err));
+            return -1;
+        }
+
         // LU factorize diagonal block on host using LAPACK, store pivots in global pivot vector
         int info = block_lu(bsf->flat_data + bsf->offsets[diag_idx], diag_N, block_pivot);
         if (info != 0) {
             fprintf(stderr, "[sparse_lu] block_lu failed info=%d\n", info);
             return -1;
         }
+        // printf("LU factorized diagonal block (%d, %d) at index %d on host\n", i, i, diag_idx);
 
         // Copy the updated LU factors to device so subsequent device triangular solve calls
         // operate on the updated diagonal
@@ -785,24 +797,67 @@ int sparse_lu(block_sparse_format *bsf,
                 const int N = range_length(bsf->cols[bsf->col_indices[A_22_idx]].range);
                 const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
                 // Perform Schur update on device: A_22 = A_22 - L_21 * U_12
-                {
-                    cuFloatComplex *d_C = bsf->d_flat_data + bsf->offsets[A_22_idx];
-                    const cuFloatComplex *d_L_21 = bsf->d_flat_data + bsf->offsets[L_21_idx];
-                    const cuFloatComplex *d_U_12 = bsf->d_flat_data + bsf->offsets[U_12_idx];
-                    int rc = block_schur_update_cu(d_C, d_L_21, d_U_12, M, N, K);
-                    if (rc != 0) {
-                        fprintf(stderr, "[sparse_lu] block_schur_update_cu failed for block %d: %d\n", A_22_idx, rc);
-                        return -1;
-                    }
+                cuFloatComplex *d_C = bsf->d_flat_data + bsf->offsets[A_22_idx];
+                const cuFloatComplex *d_L_21 = bsf->d_flat_data + bsf->offsets[L_21_idx];
+                const cuFloatComplex *d_U_12 = bsf->d_flat_data + bsf->offsets[U_12_idx];
+                int rc = block_schur_update_cu(d_C, d_L_21, d_U_12, M, N, K);
+                if (rc != 0) {
+                    fprintf(stderr, "[sparse_lu] block_schur_update_cu failed for block %d: %d\n", A_22_idx, rc);
+                    return -1;
                 }
+                // printf("Updated block (%d, %d) at index %d on device\n", row_idx, col_idx, A_22_idx);
             }
         }
 
-    }        
-    
+        // // After processing each row print block (2,2) on both host and device for debugging
+        // // printf("Block (2,2) after processing row %d:\n", i);
+        // int block_22_idx = -1;
+        // for (int k = 0; k < num_blocks; ++k) {
+        //     if (bsf->row_indices[k] == 2 && bsf->col_indices[k] == 2) {
+        //         block_22_idx = k;
+        //         break;
+        //     }
+        // }
+        // if (block_22_idx >= 0) {
+        //     // Download block from device
+        //     size_t M_22 = range_length(bsf->rows[2].range);
+        //     size_t N_22 = range_length(bsf->cols[2].range);
+        //     size_t elems_22 = M_22 * N_22;
+        //     size_t bytes_22 = elems_22 * sizeof(cuFloatComplex);
+        //     cuFloatComplex *d_block_22 = bsf->d_flat_data + bsf->offsets[block_22_idx];
+        //     cuFloatComplex *h_block_22 = (cuFloatComplex*)malloc(bytes_22);
+        //     if (h_block_22) {
+        //         cudaError_t err = cudaMemcpy(h_block_22, d_block_22, bytes_22, cudaMemcpyDeviceToHost);
+        //         if (err == cudaSuccess) {
+        //             printf("Device block (2,2):\n");
+        //             for (size_t r = 0; r < M_22; ++r) {
+        //                 for (size_t c = 0; c < N_22; ++c) {
+        //                     size_t idx = r + c * M_22;
+        //                     printf("(%5.2f,%5.2f) ", h_block_22[idx].x, h_block_22[idx].y);
+        //                 }
+        //                 printf("\n");
+        //             }
+        //         }
+        //         free(h_block_22);
+        //     }
+        // }
+
+        // // Print host block (2,2)
+        // if (block_22_idx >= 0) {
+        //     printf("Host block (2,2):\n");
+        //     for (int c = 0; c < range_length(bsf->cols[2].range); ++c) {
+        //         for (int r = 0; r < range_length(bsf->rows[2].range); ++r) {
+        //             int idx = bsf->offsets[block_22_idx] + r + c * range_length(bsf->rows[2].range);
+        //             printf("(%5.2f,%5.2f) ", crealf(bsf->flat_data[idx]), cimagf(bsf->flat_data[idx]));
+        //         }
+        //         printf("\n");
+        //     }
+        // }
+    }
+
     // After completing device-side Schur updates, download full flat_data
     // from device so host-side fill-in moving/zeroing uses the updated values
-    err = bsf_download_flat_data(bsf);
+    err = download_flat_data(bsf);
     if (err != 0) return err;
 
     // ========================================================================
