@@ -450,7 +450,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
             for (int i = 0; i < (n < 20 ? n : 20); i++) {
-                printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
+                printf("b1[%d] = (%5.6f,%5.6f)   b2[%d] = (%5.6f,%5.6f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));
             }
@@ -571,6 +571,7 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
             for (int i = 0; i < (n < 8 ? n : 8); i++) {
+            // for (int i = 0; i < n; i++) {
                 printf("b1[%d] = (%5.6f,%5.6f)   b2[%d] = (%5.6f,%5.6f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));
