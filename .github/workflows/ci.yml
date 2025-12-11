@@ -9,6 +9,12 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        project:
+          - c_block_sparse_format
+          - flat_c_block_sparse_format
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,11 +29,11 @@ jobs:
             liblapack-dev
 
       - name: Build demo (optional)
-        working-directory: ./c_block_sparse_format
+        working-directory: ./${{ matrix.project }}
         run: |
           make
 
       - name: Run tests
-        working-directory: ./c_block_sparse_format
+        working-directory: ./${{ matrix.project }}
         run: |
           make test
