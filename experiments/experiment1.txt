@@ -1,0 +1,138 @@
+Test on patch array with 5x5 patches
+Matrix size: 13220 x 13220
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 157
+  U solves       : 157
+  Schur updates  : 1969
+  Total          : 2283
+Time taken (seconds):
+  L solves       : 0.057681
+  U solves       : 0.075170
+  Schur updates  : 1.023841
+  Total          : 1.156692
+Fill-in matrix size: 10513 x 10513
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 7.77e-07
+Time spend computing LU: 1.345411 s
+
+Test on patch array with 8x8 patches
+Matrix size: 33440 x 33440
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 621
+  U solves       : 621
+  Schur updates  : 12259
+  Total          : 13501
+Time taken (seconds):
+  L solves       : 0.069728
+  U solves       : 0.099153
+  Schur updates  : 1.583981
+  Total          : 1.752862
+Fill-in matrix size: 29196 x 29196
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 7.03e-07
+Time spend computing LU: 2.313212 s
+
+Test on patch array with 10x10 patches
+Matrix size: 52040 x 52040
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 570
+  U solves       : 570
+  Schur updates  : 9458
+  Total          : 10598
+Time taken (seconds):
+  L solves       : 0.210482
+  U solves       : 0.275378
+  Schur updates  : 4.685944
+  Total          : 5.171804
+Fill-in matrix size: 44418 x 44418
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 8.10e-07
+Time spend computing LU: 6.204834 s
+
+Test on patch array with 12x12 patches
+Matrix size: 74736 x 74736
+Fill-in matrix allocation failed. Size of fill-in matrix: 62996 x 62996
+Warning: Fill-in matrix was too large to allocate. Fill-in matrix not returned.
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 588
+  U solves       : 588
+  Schur updates  : 8838
+  Total          : 10014
+Time taken (seconds):
+  L solves       : 0.524497
+  U solves       : 0.651498
+  Schur updates  : 12.265911
+  Total          : 13.441906
+Fill-in matrix size: 0 x 0
+
+Block sparse LU factorisation successful.
+TEST FAILED: Relative error of computing b = LUx is 2.46e+03
+Time spend computing LU: 13.534871 s
+
+Test on patch array with 15x15 patches
+Matrix size: 116460 x 116460
+Fill-in matrix allocation failed. Size of fill-in matrix: 92520 x 92520
+Warning: Fill-in matrix was too large to allocate. Fill-in matrix not returned.
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 535
+  U solves       : 535
+  Schur updates  : 6179
+  Total          : 7249
+Time taken (seconds):
+  L solves       : 1.553804
+  U solves       : 1.851745
+  Schur updates  : 30.283787
+  Total          : 33.689336
+Fill-in matrix size: 0 x 0
+
+Block sparse LU factorisation successful.
+TEST FAILED: Relative error of computing b = LUx is 2.33e+03
+Time spend computing LU: 33.913670 s
+
+Test on reflector with struts 25GHz
+Matrix size: 51732 x 51732
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 673
+  U solves       : 673
+  Schur updates  : 8453
+  Total          : 9799
+Time taken (seconds):
+  L solves       : 0.167747
+  U solves       : 0.213109
+  Schur updates  : 2.375573
+  Total          : 2.756429
+Fill-in matrix size: 42084 x 42084
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 6.13e-07
+Time spend computing LU: 3.464181 s
+
+Test on reflector with struts 30GHz
+Matrix size: 72988 x 72988
+Fill-in matrix allocation failed. Size of fill-in matrix: 64375 x 64375
+Warning: Fill-in matrix was too large to allocate. Fill-in matrix not returned.
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2454
+  U solves       : 2454
+  Schur updates  : 49480
+  Total          : 54388
+Time taken (seconds):
+  L solves       : 0.064444
+  U solves       : 0.095582
+  Schur updates  : 1.131741
+  Total          : 1.291767
+Fill-in matrix size: 0 x 0
+
+Block sparse LU factorisation successful.
+TEST FAILED: Relative error of computing b = LUx is 5.10e+02
+Time spend computing LU: 1.658080 s

@@ -423,8 +423,21 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
                 fprintf(stderr, "Alloc vec_out failed\n");
                 error = 1;
             } else {
-                sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
-                for (int i = 0; i < n; ++i) b2[i] = vec_out[i];
+                if (fill_in_matrix == NULL) {
+                    // No fill-in matrix allocated, just use sparse_trimul
+                    if (sparse_trimul(&bsf, b2, 'U') != 0) {
+                        fprintf(stderr, "sparse_trimul failed\n");
+                        error = 1;
+                    }
+                    if (!error && sparse_trimul(&bsf, b2, 'L') != 0) {
+                        fprintf(stderr, "sparse_trimul failed\n");
+                        error = 1;
+                    }
+                } else {
+                    // Use sparse_dense_trimul to include fill-in matrix
+                    sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
+                    for (int i = 0; i < n; i++) b2[i] = vec_out[i];
+                }
                 free(vec_out);
             }
         }
@@ -516,6 +529,9 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     // printf("The original A:\n");
     // sparse_print_matrix(&bsf);
 
+    // Print size of matrix A
+    printf("Matrix size: %d x %d\n", n, n);
+
     // Factorize block sparse matrix
     int lu_factorise_dense = 0;
     if (!error) {
@@ -548,9 +564,22 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
             fprintf(stderr, "Alloc vec_out failed\n");
             error = 1;
         } else {
-            sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
-            for (int i = 0; i < n; ++i) b2[i] = vec_out[i];
-            free(vec_out);
+            if (fill_in_matrix == NULL) {
+                // No fill-in matrix allocated, just use sparse_trimul
+                if (sparse_trimul(&bsf, b2, 'U') != 0) {
+                    fprintf(stderr, "sparse_trimul failed\n");
+                    error = 1;
+                }
+                if (!error && sparse_trimul(&bsf, b2, 'L') != 0) {
+                    fprintf(stderr, "sparse_trimul failed\n");
+                    error = 1;
+                }
+            } else {
+                // Use sparse_dense_trimul to include fill-in matrix
+                sparse_dense_trimul(n, &bsf, fill_in_matrix_size, fill_in_matrix, b2, vec_out, fill_in_piv, lu_factorise_dense, received_fill_in);
+                for (int i = 0; i < n; ++i) b2[i] = vec_out[i];
+                free(vec_out);
+            }
         }
     }
 

@@ -372,6 +372,9 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     double time_counts[4] = {0.0, 0.0, 0.0, 0.0}; // {L solve, U solve, Schur update, Total}
     struct timeval start, end;
 
+    // Flag if fill-in matrix is too large to allocate
+    int fill_in_too_large = 0;
+
     // ========================================================================
     // Dry run to get size of fill-in matrix
     // ========================================================================
@@ -449,7 +452,10 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
         if (received_fill_in[j]) fill_in_matrix_size += range_length(bsf->rows[j].range);
     }
     complex float *fill_in_matrix = (float complex*)calloc((int)fill_in_matrix_size * (int)fill_in_matrix_size, sizeof(float complex));
-    if (!fill_in_matrix) return -2;
+    if (!fill_in_matrix) { 
+        printf("Fill-in matrix allocation failed. Size of fill-in matrix: %d x %d\n", fill_in_matrix_size, fill_in_matrix_size); 
+        fill_in_too_large = 1;
+    }
 
     // Print fill_in_matrix for debugging
     // printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
@@ -557,18 +563,20 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                         break;
                     }
                 }
-                if (A_22_idx < 0) { // Block not present, fill-in will be created and must be moved to dense fill-in matrix
+                if (A_22_idx < 0) { // Block not present, fill-in will be created and must be moved to dense fill-in matrix}
                     // Get row and column ranges
                     const int M = range_length(bsf->rows[row_idx].range);
                     const int N = range_length(bsf->cols[col_idx].range);
 
-                    // Create new fill-in block
-                    float complex *new_blk = (float complex*)malloc((int)M * (int)N * sizeof(float complex));
-                    for (int c = 0; c < N; ++c) {
-                        for (int r = 0; r < M; ++r) {
-                            new_blk[r + c*M] = fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size];
+                    float complex *new_blk = (float complex*)calloc((size_t)M * (size_t)N, sizeof(float complex));
+                    if (!fill_in_too_large) {
+                        // Create new fill-in block
+                        for (int c = 0; c < N; ++c) {
+                            for (int r = 0; r < M; ++r) {
+                                new_blk[r + c*M] = fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size];
+                            }
                         }
-                    }
+                    } 
 
                     // Perform Schur update on the new block
                     const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
@@ -579,10 +587,12 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
                     time_counts[2] += elapsed;
                     matmul_counts[2] += 1; // Schur update
 
-                    // Copy updated block back to fill-in matrix
-                    for (int c = 0; c < N; ++c) {
-                        for (int r = 0; r < M; ++r) {
-                            fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = new_blk[r + c*M];
+                    if (!fill_in_too_large) {
+                        // Copy updated block back to fill-in matrix
+                        for (int c = 0; c < N; ++c) {
+                            for (int r = 0; r < M; ++r) {
+                                fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = new_blk[r + c*M];
+                            }
                         }
                     }
 
@@ -617,6 +627,10 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     // printf("\n======= AFTER PROCESSING ALL ROWS =======\n");
 
     for (int k = 0; k < bsf->num_blocks; ++k) {
+        if (fill_in_too_large) {
+            // Skip moving blocks if fill-in matrix could not be allocated
+            break;
+        }
         int row_idx = bsf->row_indices[k];
         int col_idx = bsf->col_indices[k];
         if (received_fill_in[row_idx] && received_fill_in[col_idx]) {
@@ -669,6 +683,12 @@ int sparse_lu(block_sparse_format *bsf, complex float **fill_in_matrix_out, int 
     //         printf("Block %d at (%d, %d) is lower triangular\n", k, bsf->row_indices[k], bsf->col_indices[k]);
     //     }
     // }
+
+    if (fill_in_too_large) {
+        printf("Warning: Fill-in matrix was too large to allocate. Fill-in matrix not returned.\n");
+        fill_in_matrix = NULL;
+        fill_in_matrix_size = 0;
+    }
 
     matmul_counts[3] = matmul_counts[0] + matmul_counts[1] + matmul_counts[2];
     time_counts[3] = time_counts[0] + time_counts[1] + time_counts[2];

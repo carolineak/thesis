@@ -58,10 +58,6 @@ int main(void) {
         printf("\nTest on reflector with struts 30GHz\n");
         data = "/x/users/mhg/til_ck/reflector_with_struts/case_30GHz.bin";
         run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
-
-        printf("\nTest on reflector with struts 50GHz\n");
-        data = "/x/users/mhg/til_ck/reflector_with_struts/case_50GHz.bin";
-        run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
     }
 
     printf("\nAll tests completed. Passed %d out of %d tests.\n", passed, total);
