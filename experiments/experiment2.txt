@@ -1,0 +1,233 @@
+./run_tests
+Running block-sparse tests (3 sizes × 4 structures)
+
+→ Test: matrix of size 8 x 8 using block structure no. 0
+TEST PASSED: Relative error of matvec is 2.54e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 2
+  Total          : 6
+Time taken (seconds):
+  L solves       : 0.000056
+  U solves       : 0.000014
+  Schur updates  : 0.000032
+  Total          : 0.000102
+Fill-in matrix size: 0 x 0
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 5.93e-08
+Time spend computing LU: 0.000838 s
+
+→ Test: matrix of size 8 x 8 using block structure no. 1
+TEST PASSED: Relative error of matvec is 5.85e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000001
+  U solves       : 0.000002
+  Schur updates  : 0.000003
+  Total          : 0.000006
+Fill-in matrix size: 4 x 4
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 1.12e-07
+Time spend computing LU: 0.000020 s
+
+→ Test: matrix of size 8 x 8 using block structure no. 2
+TEST PASSED: Relative error of matvec is 6.73e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000002
+  U solves       : 0.000002
+  Schur updates  : 0.000003
+  Total          : 0.000007
+Fill-in matrix size: 5 x 5
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 5.64e-08
+Time spend computing LU: 0.000019 s
+
+→ Test: matrix of size 8 x 8 using block structure no. 3
+TEST PASSED: Relative error of matvec is 4.81e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000009
+  U solves       : 0.000001
+  Schur updates  : 0.000004
+  Total          : 0.000014
+Fill-in matrix size: 4 x 4
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 8.43e-08
+Time spend computing LU: 0.000024 s
+
+→ Test: matrix of size 80 x 80 using block structure no. 0
+TEST PASSED: Relative error of matvec is 6.94e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 2
+  Total          : 6
+Time taken (seconds):
+  L solves       : 0.000016
+  U solves       : 0.000014
+  Schur updates  : 0.000004
+  Total          : 0.000034
+Fill-in matrix size: 0 x 0
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 1.26e-07
+Time spend computing LU: 0.000096 s
+
+→ Test: matrix of size 80 x 80 using block structure no. 1
+TEST PASSED: Relative error of matvec is 5.96e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000006
+  U solves       : 0.000013
+  Schur updates  : 0.000008
+  Total          : 0.000027
+Fill-in matrix size: 40 x 40
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 4.24e-07
+Time spend computing LU: 0.000058 s
+
+→ Test: matrix of size 80 x 80 using block structure no. 2
+TEST PASSED: Relative error of matvec is 6.18e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000009
+  U solves       : 0.000015
+  Schur updates  : 0.000009
+  Total          : 0.000033
+Fill-in matrix size: 41 x 41
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 2.21e-07
+Time spend computing LU: 0.000065 s
+
+→ Test: matrix of size 80 x 80 using block structure no. 3
+TEST PASSED: Relative error of matvec is 6.08e-08
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000006
+  U solves       : 0.000009
+  Schur updates  : 0.000008
+  Total          : 0.000023
+Fill-in matrix size: 49 x 49
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 2.03e-07
+Time spend computing LU: 0.000058 s
+
+→ Test: matrix of size 800 x 800 using block structure no. 0
+TEST PASSED: Relative error of matvec is 1.17e-07
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 2
+  Total          : 6
+Time taken (seconds):
+  L solves       : 0.000538
+  U solves       : 0.003535
+  Schur updates  : 0.001116
+  Total          : 0.005189
+Fill-in matrix size: 0 x 0
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 5.84e-07
+Time spend computing LU: 0.021108 s
+
+→ Test: matrix of size 800 x 800 using block structure no. 1
+TEST PASSED: Relative error of matvec is 1.21e-07
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000374
+  U solves       : 0.000631
+  Schur updates  : 0.000759
+  Total          : 0.001764
+Fill-in matrix size: 400 x 400
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 6.71e-07
+Time spend computing LU: 0.003256 s
+
+→ Test: matrix of size 800 x 800 using block structure no. 2
+TEST PASSED: Relative error of matvec is 1.24e-07
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000516
+  U solves       : 0.000663
+  Schur updates  : 0.000853
+  Total          : 0.002032
+Fill-in matrix size: 401 x 401
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 6.59e-07
+Time spend computing LU: 0.006904 s
+
+→ Test: matrix of size 800 x 800 using block structure no. 3
+TEST PASSED: Relative error of matvec is 1.39e-07
+Sparse LU factorization completed.
+Number of block matrix operations:
+  L solves       : 2
+  U solves       : 2
+  Schur updates  : 4
+  Total          : 8
+Time taken (seconds):
+  L solves       : 0.000139
+  U solves       : 0.000863
+  Schur updates  : 0.001545
+  Total          : 0.002547
+Fill-in matrix size: 499 x 499
+
+Block sparse LU factorisation successful.
+TEST PASSED: Relative error of computing b = LUx is 1.00e-06
+Time spend computing LU: 0.005454 s
+
+
+All tests completed. Passed 24 out of 24 tests.

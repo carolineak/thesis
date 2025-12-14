@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+Size of patch array & Size of matrix & Computing $L_{21}$ & Computing $U_{12}$ & Schur updating & Total \\
+\hline
+$5 \times 5$ & $13220 \times 13220$ & 157 & 157 & 1969 & 2283 \\
+\hline
+$8 \times 8$ & $33440 \times 33440$ & 621 & 621 & 12259 & 13501 \\
+\hline
+$10 \times 10$ & $52040 \times 52040$ & 570 & 570 & 9458 & 10598 \\
+\hline
+$12 \times 12$ & $74736 \times 74736$ & 588 & 588 & 8838 & 10014 \\
+\hline
+$15 \times 15$ & $116460 \times 116460$ & 535 & 535 & 6179 & 7249 \\
+\hline
+\end{tabular}
+\caption{Block matrix operation counts for patch-array test cases.}
+\label{tab:patch-ops}
+\end{table}

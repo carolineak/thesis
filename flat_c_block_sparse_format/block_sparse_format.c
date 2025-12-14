@@ -729,7 +729,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
 
     // Internal vector x to save original b
     float complex *x = (float complex*)malloc(bsf->m * sizeof(float complex));
-    if (!x) return -2;
+    if (!x) return -1;
     memcpy(x, b, bsf->m * sizeof(float complex));
 
     // Forward solve Ly = b
@@ -744,7 +744,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
                     break;
                 }
             }
-            if (diag_idx < 0) { free(x); return -2; }
+            if (diag_idx < 0) { free(x); return -1; }
 
             int row_start = bsf->rows[i].range.start;
             int M = range_length(bsf->rows[i].range);
@@ -767,7 +767,7 @@ int sparse_trimul(const block_sparse_format *bsf, float complex *b, char uplo) {
             // After applying the diagonal block, apply the blocks in the same row but only on the lower side of the diagonal
             for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
                 int blk_idx = bsf->rows[i].indices[ii];
-                // check if in L
+                // Check if in L
                 if (!bsf->is_lower[blk_idx] || blk_idx == diag_idx) continue;
                 int col_start = bsf->cols[bsf->col_indices[blk_idx]].range.start;
                 int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
