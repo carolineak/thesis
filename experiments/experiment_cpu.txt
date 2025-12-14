@@ -136,3 +136,5 @@ Fill-in matrix size: 0 x 0
 Block sparse LU factorisation successful.
 TEST FAILED: Relative error of computing b = LUx is 5.10e+02
 Time spend computing LU: 1.658080 s
+
+All tests completed. Passed 6 out of 9 tests.

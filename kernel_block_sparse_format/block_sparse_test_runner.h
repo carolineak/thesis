@@ -10,7 +10,9 @@
 //   block_structure  : Block structure pattern
 //
 // ==================================================================
-void run_data_structure_test(int n, int b, int block_structure);
+void run_data_structure_test(int n, 
+                             int b, 
+                             int block_structure);
 
 // ==================================================================
 // Run matrix-vector multiplication tests for synthetic test matrices
@@ -24,7 +26,12 @@ void run_data_structure_test(int n, int b, int block_structure);
 //   passed           : Pointer to store test result (1 if passed, 0 if failed)
 //
 // ==================================================================
-void run_matvec_test(int n, int b, int block_structure, int print, double tolerance, int *passed);
+void run_matvec_test(int n, 
+                     int b, 
+                     int block_structure, 
+                     int print, 
+                     double tolerance, 
+                     int *passed);
 
 // ==================================================================
 // Run LU triangular multiplication tests for synthetic test matrices
@@ -38,7 +45,12 @@ void run_matvec_test(int n, int b, int block_structure, int print, double tolera
 //   passed           : Pointer to store test result (1 if passed, 0 if failed)
 //
 // ==================================================================
-void run_lu_trimul_test(int n, int b, int block_structure, int print, double tolerance, int *passed);
+void run_lu_trimul_test(int n, 
+                        int b, 
+                        int block_structure, 
+                        int print, 
+                        double tolerance, 
+                        int *passed);
 
 // ==================================================================
 // Run LU triangular multiplication tests on binary data file
@@ -50,7 +62,10 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
 //   data             : Path to binary data file
 //
 // ==================================================================
-void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, char *data);
+void run_lu_trimul_test_on_bin_data(int print, 
+                                    double tolerance, 
+                                    int *passed, 
+                                    char *data);
 
 // ==================================================================
 // Run LU identity tests for synthetic test matrices
@@ -59,17 +74,23 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
 //   n                : Matrix dimension
 //   b                : Block size
 //   block_structure  : Block structure pattern
+//   print            : Flag to enable/disable output printing
 //
 // ==================================================================
-void run_lu_identity_test(int n, int b, int block_structure);
+void run_lu_identity_test(int n, 
+                          int b,    
+                          int block_structure, 
+                          int print);
 
 // ==================================================================
 // Run LU identity tests on binary data file
 //
 // Arguments
 //   data             : Path to binary data file
+//   print            : Flag to enable/disable output printing
 //
 // ==================================================================
-void run_lu_identity_test_with_bin_data(char *data);
+void run_lu_identity_test_with_bin_data(char *data, 
+                                        int print);
 
 #endif

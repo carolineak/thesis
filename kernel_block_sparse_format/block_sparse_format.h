@@ -176,7 +176,8 @@ int sparse_matvec(const block_sparse_format *bsf,
 int sparse_lu(block_sparse_format *bsf, 
               complex float **fill_in_matrix_out, 
               int *fill_in_matrix_size_out, 
-              int **received_fill_in_out);
+              int **received_fill_in_out,
+              int print);
 
 // ==================================================================
 // Compute Ax = b, where A is given in block sparse LU format

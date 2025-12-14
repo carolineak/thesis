@@ -38,13 +38,36 @@ static void cuda_block_trsm(cuFloatComplex *d_A,
 
     cuFloatComplex alpha = make_cuFloatComplex(1.0f, 0.0f);
 
-    // If required, apply pivots to the target block on device
-    if (ipiv && (side == 'L' || side == 'l') && (uplo == 'L' || uplo == 'l')) {
-        int rc = apply_pivots_cu(d_B, ldb, n, ipiv, m);
-        if (rc != 0) {
-            fprintf(stderr, "apply_pivots_cu failed: %d\n", rc);
+    // Only apply pivots if Left/Lower (L) step of LU solve
+    if (side == 'L' || side == 'l') {
+        if (uplo == 'L' || uplo == 'l') {
+            // Download block B to host to apply pivots on host
+            float complex *h_B = (float complex*)malloc(m * n * sizeof(float complex));
+            if (!h_B) {
+                fprintf(stderr, "Failed to allocate host memory for B\n");
+                return;
+            }
+            cudaMemcpy(h_B, d_B, m * n * sizeof(float complex), cudaMemcpyDeviceToHost);
+
+            // Apply pivots on host
+            for (int i = 0; i < m; ++i) {
+                int piv = (int)ipiv[i] - 1;   // ipiv is 1-based
+                if (piv != i) {
+                    // swap row i <-> piv across all N columns (column-major)
+                    for (int j = 0; j < n; ++j) {
+                        float complex tmp = h_B[i   + ldb*j];
+                        h_B[i   + ldb*j] = h_B[piv + ldb*j];
+                        h_B[piv + ldb*j] = tmp;
+                    }
+                }
+            }
+
+            // Upload back to device
+            cudaMemcpy(d_B, h_B, m * n * sizeof(float complex), cudaMemcpyHostToDevice);
+            free(h_B);
         }
     }
+
 
     // Call trisolve_cu with device pointers for A and B and cuFloatComplex alpha
     int rc = trisolve_cu(side, uplo, 
@@ -477,7 +500,8 @@ int sparse_matvec(const block_sparse_format *bsf,
 int sparse_lu(block_sparse_format *bsf, 
               complex float **fill_in_matrix_out, 
               int *fill_in_matrix_size_out, 
-              int **received_fill_in_out) {
+              int **received_fill_in_out,
+              int print) {
 
     // =======================================================================
     // Check inputs
@@ -524,6 +548,16 @@ int sparse_lu(block_sparse_format *bsf,
     int *block_start = (int*)malloc((int)bsf->num_rows * sizeof(int));
     if (!block_start) return -1;
     for (int i = 0; i < bsf->num_rows; ++i) block_start[i] = bsf->rows[i].range.start;
+
+    // Array for keeping track of how many matmuls per operation, length = 4
+    int matmul_counts[4] = {0, 0, 0, 0}; // {L solve, U solve, Schur update, Total}
+
+    // Array for keeping track of time taken per operation, length = 4
+    double time_counts[4] = {0.0, 0.0, 0.0, 0.0}; // {L solve, U solve, Schur update, Total}
+    struct timeval start, end;
+
+    // Flag if fill-in matrix is too large to allocate
+    int fill_in_too_large = 0;
 
     // ========================================================================
     // Dry run to get size of fill-in matrix
@@ -594,9 +628,11 @@ int sparse_lu(block_sparse_format *bsf,
     for (int j = 1; j < bsf->num_rows; j++) {
         if (received_fill_in[j]) fill_in_matrix_size += range_length(bsf->rows[j].range);
     }
-    printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
     complex float *fill_in_matrix = (float complex*)calloc((int)fill_in_matrix_size * (int)fill_in_matrix_size, sizeof(float complex));
-    if (!fill_in_matrix) return -1;
+    if (!fill_in_matrix) { 
+        printf("Fill-in matrix allocation failed. Size of fill-in matrix: %d x %d\n", fill_in_matrix_size, fill_in_matrix_size); 
+        fill_in_too_large = 1;
+    }
 
     // =======================================================================
     // Computation run with actual-sized fill-in matrix
@@ -672,12 +708,17 @@ int sparse_lu(block_sparse_format *bsf,
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
 
+            gettimeofday(&start, NULL);
             // Perform triangular solve on device
             cuda_block_trsm(bsf->d_flat_data + bsf->offsets[diag_idx], 
                             bsf->d_flat_data + bsf->offsets[blk_idx], 
                             M, N, diag_M, 
                             block_pivot, 
                             'R', 'U', 'N');
+            gettimeofday(&end, NULL);
+            double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+            time_counts[0] += elapsed;
+            matmul_counts[0] += 1; // L solve count
         }
         // L_21 blocks remain on device for device-side Schur update
 
@@ -689,12 +730,17 @@ int sparse_lu(block_sparse_format *bsf,
             const int M = range_length(bsf->rows[bsf->row_indices[blk_idx]].range);
             const int N = range_length(bsf->cols[bsf->col_indices[blk_idx]].range);
 
+            gettimeofday(&start, NULL);
             // Perform triangular solve on device
             cuda_block_trsm(bsf->d_flat_data + bsf->offsets[diag_idx], 
                             bsf->d_flat_data + bsf->offsets[blk_idx], 
                             M, N, diag_M, 
                             block_pivot, 
-                            'L', 'L', 'U');          
+                            'L', 'L', 'U');  
+            gettimeofday(&end, NULL);
+            double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+            time_counts[1] += elapsed;
+            matmul_counts[1] += 1; // U solve count        
         }
         // U_12 blocks remain on device for device-side Schur update
 
@@ -742,13 +788,22 @@ int sparse_lu(block_sparse_format *bsf,
                         cudaFree(d_fill_in);
                         return -1;
                     }
-                    for (int c = 0; c < N; ++c) {
-                        for (int r = 0; r < M; ++r) {
-                            int idx = r + c*M;
-                            float realv = crealf(fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size]);
-                            float imagv = cimagf(fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size]);
-                            h_fill_in[idx].x = realv;
-                            h_fill_in[idx].y = imagv;
+                    if (fill_in_too_large) {
+                        // Set h_fill_in to zero if fill-in matrix could not be allocated
+                        for (size_t idx = 0; idx < elems; ++idx) {
+                            h_fill_in[idx].x = 0.0f;
+                            h_fill_in[idx].y = 0.0f;
+                        }
+                    } else {
+                        // Copy initial fill-in block from fill_in_matrix
+                        for (int c = 0; c < N; ++c) {
+                            for (int r = 0; r < M; ++r) {
+                                int idx = r + c*M;
+                                float realv = crealf(fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size]);
+                                float imagv = cimagf(fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx]+ c)*fill_in_matrix_size]);
+                                h_fill_in[idx].x = realv;
+                                h_fill_in[idx].y = imagv;
+                            }
                         }
                     }
 
@@ -765,6 +820,7 @@ int sparse_lu(block_sparse_format *bsf,
                     const cuFloatComplex *d_L_21 = bsf->d_flat_data + bsf->offsets[L_21_idx];
                     const cuFloatComplex *d_U_12 = bsf->d_flat_data + bsf->offsets[U_12_idx];
 
+                    gettimeofday(&start, NULL);
                     // Perform Schur update on device: A_22 = A_22 - L_21 * U_12
                     int rc = block_schur_update_cu(d_fill_in, d_L_21, d_U_12, M, N, K);
                     if (rc != 0) {
@@ -773,6 +829,10 @@ int sparse_lu(block_sparse_format *bsf,
                         cudaFree(d_fill_in);
                         return -1;
                     }
+                    gettimeofday(&end, NULL);
+                    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+                    time_counts[2] += elapsed;
+                    matmul_counts[2] += 1; // Schur update count
 
                     // Copy result back to the host and store in fill_in_matrix
                     err = cudaMemcpy(h_fill_in, d_fill_in, bytes, cudaMemcpyDeviceToHost);
@@ -782,10 +842,14 @@ int sparse_lu(block_sparse_format *bsf,
                         cudaFree(d_fill_in);
                         return -1;
                     }
-                    for (int c = 0; c < N; ++c) {
-                        for (int r = 0; r < M; ++r) {
-                            int idx = r + c*M;
-                            fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = h_fill_in[idx].x + h_fill_in[idx].y * I;
+
+                    if (!fill_in_too_large) {
+                        // Store updated fill-in block back to fill_in_matrix
+                        for (int c = 0; c < N; ++c) {
+                            for (int r = 0; r < M; ++r) {
+                                int idx = r + c*M;
+                                fill_in_matrix[(fill_in_block_start[row_idx] + r) + (fill_in_block_start[col_idx] + c)*fill_in_matrix_size] = h_fill_in[idx].x + h_fill_in[idx].y * I;
+                            }
                         }
                     }
 
@@ -796,6 +860,8 @@ int sparse_lu(block_sparse_format *bsf,
                 const int M = range_length(bsf->rows[bsf->row_indices[A_22_idx]].range);
                 const int N = range_length(bsf->cols[bsf->col_indices[A_22_idx]].range);
                 const int K = range_length(bsf->cols[bsf->col_indices[L_21_idx]].range);
+
+                gettimeofday(&start, NULL);
                 // Perform Schur update on device: A_22 = A_22 - L_21 * U_12
                 cuFloatComplex *d_C = bsf->d_flat_data + bsf->offsets[A_22_idx];
                 const cuFloatComplex *d_L_21 = bsf->d_flat_data + bsf->offsets[L_21_idx];
@@ -805,7 +871,10 @@ int sparse_lu(block_sparse_format *bsf,
                     fprintf(stderr, "[sparse_lu] block_schur_update_cu failed for block %d: %d\n", A_22_idx, rc);
                     return -1;
                 }
-                // printf("Updated block (%d, %d) at index %d on device\n", row_idx, col_idx, A_22_idx);
+                gettimeofday(&end, NULL);
+                double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1e6;
+                time_counts[2] += elapsed;
+                matmul_counts[2] += 1; // Schur update count
             }
         }
 
@@ -867,6 +936,10 @@ int sparse_lu(block_sparse_format *bsf,
 
     // Zero out the blocks in the original matrix that were moved to the fill-in matrix
     for (int k = 0; k < bsf->num_blocks; ++k) {
+        if (fill_in_too_large) {
+            // Skip moving blocks if fill-in matrix could not be allocated
+            break;
+        }
         int row_idx = bsf->row_indices[k];
         int col_idx = bsf->col_indices[k];
         if (received_fill_in[row_idx] && received_fill_in[col_idx]) {
@@ -922,6 +995,29 @@ int sparse_lu(block_sparse_format *bsf,
     // =======================================================================
     // Set outputs and clean up
     // =======================================================================
+    if (fill_in_too_large) {
+        printf("Warning: Fill-in matrix was too large to allocate. Fill-in matrix not returned.\n");
+        fill_in_matrix = NULL;
+        fill_in_matrix_size = 0;
+    }
+
+    matmul_counts[3] = matmul_counts[0] + matmul_counts[1] + matmul_counts[2];
+    time_counts[3] = time_counts[0] + time_counts[1] + time_counts[2];
+    if (print >= 1) {
+        printf("Sparse LU factorization completed.\n");
+        printf("Number of block matrix operations:\n");
+        printf("  L solves       : %d\n", matmul_counts[0]);
+        printf("  U solves       : %d\n", matmul_counts[1]);
+        printf("  Schur updates  : %d\n", matmul_counts[2]);
+        printf("  Total          : %d\n", matmul_counts[3]);
+        printf("Time taken (seconds):\n");
+        printf("  L solves       : %f\n", time_counts[0]);
+        printf("  U solves       : %f\n", time_counts[1]);
+        printf("  Schur updates  : %f\n", time_counts[2]);
+        printf("  Total          : %f\n", time_counts[3]);
+        printf("Fill-in matrix size: %d x %d\n", fill_in_matrix_size, fill_in_matrix_size);
+    }
+
     *fill_in_matrix_out = fill_in_matrix;
     *fill_in_matrix_size_out = fill_in_matrix_size;
     *received_fill_in_out = received_fill_in;

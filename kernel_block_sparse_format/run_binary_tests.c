@@ -14,7 +14,7 @@ int main(void) {
     // Test parameters
     const int print           = 1;      // 0=silent, 1=results, 2=show data, 3=show LU
     const double tolerance    = 1e-3;
-    int on_server             = 0;      // Set to 1 when running on TICRA's server to enable those tests
+    int on_server             = 1;      // Set to 1 when running on TICRA's server to enable those tests
     
     int passed = 0, total = 0;
 

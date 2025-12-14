@@ -12,9 +12,9 @@
 
 int main(void) {
     // Test parameters
-    const int print           = 1;              // 0=silent, 1=results, 2=show data, 3=show LU
+    const int print           = 2;              // 0=silent, 1=results, 2=show data, 3=show LU
     const double tolerance    = 1e-3;
-    const int block_sizes[]   = {2};
+    const int block_sizes[]   = {40};
     const int structures[]    = {0,1,2,3};      // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
     
     int passed = 0, total = 0;
