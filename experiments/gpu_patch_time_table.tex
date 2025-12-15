@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{|c|c|c|c|c|c|}
+\hline
+Size of patch array & Size of matrix & Computing $L_{21}$ & Computing $U_{12}$ & Schur updating & Total \\
+\hline
+$5 \times 5$ & $13220 \times 13220$ & 0.003035 & 0.037749 & 0.018735 & 0.059519 \\
+\hline
+$8 \times 8$ & $33440 \times 33440$ & 0.006427 & 0.072518 & 0.094908 & 0.173853 \\
+\hline
+$10 \times 10$ & $52040 \times 52040$ & 0.011985 & 0.129668 & 0.103235 & 0.244888 \\
+\hline
+$12 \times 12$ & $74736 \times 74736$ & 0.017949 & 0.222458 & 0.106136 & 0.346543 \\
+\hline
+$15 \times 15$ & $116460 \times 116460$ & 0.025750 & 0.402823 & 0.061285 & 0.489858 \\
+\hline
+\end{tabular}
+\caption{Computation runtimes (s) for patch-array test cases.}
+\label{tab:patch-time}
+\end{table}

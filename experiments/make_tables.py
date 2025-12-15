@@ -115,7 +115,7 @@ def write_relerr_table(
     assert len(first_col_values) == len(matrix_sizes) == len(rel_errors)
 
     lines = []
-    lines.append("\\begin{table}[t]")
+    lines.append("\\begin{table}[H]]")
     lines.append("\\centering")
     lines.append("\\begin{tabular}{|c|c|c|}")
     lines.append("\\hline")
