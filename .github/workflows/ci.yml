@@ -12,8 +12,8 @@ jobs:
     strategy:
       matrix:
         project:
-          - c_block_sparse_format
-          - flat_c_block_sparse_format
+          - initial_block_sparse_format
+          - flat_block_sparse_format
 
     steps:
       - name: Checkout repository
