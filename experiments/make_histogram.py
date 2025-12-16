@@ -1,72 +1,64 @@
 #!/usr/bin/env python3
 """
-Parse a block-sparse .bin file laid out as:
+Python 3.6-compatible parser for block-sparse .bin files laid out as:
 [num_blocks, row_start, row_stop, col_start, col_stop, values]
-with:
+where:
 - num_blocks: 1 x int32
 - row_start/row_stop/col_start/col_stop: num_blocks x int32
-- values: concatenated complex64 (i.e., complex with float32 real/imag)
+- values: concatenated complex64 (complex float32)
 
-This script:
-1) Parses metadata
-2) Splits values per block (column-major inside each block, order='F')
-3) Plots "one block size per block-row" (one bar per unique row interval)
+Plots one block-row size per unique (row_start,row_stop) interval.
 """
 
-from __future__ import annotations
-
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-@dataclass(frozen=True)
-class BlockMeta:
-    row_start: int
-    row_stop: int
-    col_start: int
-    col_stop: int
+class BlockMeta(object):
+    __slots__ = ("row_start", "row_stop", "col_start", "col_stop")
+
+    def __init__(self, row_start, row_stop, col_start, col_stop):
+        self.row_start = int(row_start)
+        self.row_stop = int(row_stop)
+        self.col_start = int(col_start)
+        self.col_stop = int(col_stop)
 
     @property
-    def nrows(self) -> int:
+    def nrows(self):
         return int(self.row_stop - self.row_start)
 
     @property
-    def ncols(self) -> int:
+    def ncols(self):
         return int(self.col_stop - self.col_start)
 
     @property
-    def nnz(self) -> int:
+    def nnz(self):
         return self.nrows * self.ncols
 
 
-def read_block_sparse_bin(path: Path) -> Tuple[List[BlockMeta], List[np.ndarray]]:
-    """
-    Returns:
-      metas: list of BlockMeta length num_blocks
-      blocks: list of dense numpy arrays with shape (nrows, ncols), complex64
-    """
+def read_block_sparse_bin(path):  # type: (Path) -> Tuple[List[BlockMeta], List[np.ndarray]]
     with path.open("rb") as f:
         num_blocks_arr = np.fromfile(f, dtype=np.int32, count=1)
         if num_blocks_arr.size != 1:
             raise ValueError("File ended before reading num_blocks.")
         num_blocks = int(num_blocks_arr[0])
         if num_blocks < 0:
-            raise ValueError(f"Invalid num_blocks={num_blocks}.")
+            raise ValueError("Invalid num_blocks={}".format(num_blocks))
 
         row_start = np.fromfile(f, dtype=np.int32, count=num_blocks)
-        row_stop  = np.fromfile(f, dtype=np.int32, count=num_blocks)
+        row_stop = np.fromfile(f, dtype=np.int32, count=num_blocks)
         col_start = np.fromfile(f, dtype=np.int32, count=num_blocks)
-        col_stop  = np.fromfile(f, dtype=np.int32, count=num_blocks)
+        col_stop = np.fromfile(f, dtype=np.int32, count=num_blocks)
 
-        if any(arr.size != num_blocks for arr in (row_start, row_stop, col_start, col_stop)):
+        if (row_start.size != num_blocks or row_stop.size != num_blocks or
+                col_start.size != num_blocks or col_stop.size != num_blocks):
             raise ValueError("File ended while reading block index arrays.")
 
-        metas: List[BlockMeta] = []
+        metas = []  # type: List[BlockMeta]
         nnz_per_block = np.empty(num_blocks, dtype=np.int64)
 
         for i in range(num_blocks):
@@ -74,8 +66,7 @@ def read_block_sparse_bin(path: Path) -> Tuple[List[BlockMeta], List[np.ndarray]
             cs, ce = int(col_start[i]), int(col_stop[i])
             if re < rs or ce < cs:
                 raise ValueError(
-                    f"Invalid range for block {i}: "
-                    f"rows [{rs},{re}), cols [{cs},{ce})"
+                    "Invalid range for block {}: rows [{},{}), cols [{},{}).".format(i, rs, re, cs, ce)
                 )
             meta = BlockMeta(rs, re, cs, ce)
             metas.append(meta)
@@ -83,21 +74,18 @@ def read_block_sparse_bin(path: Path) -> Tuple[List[BlockMeta], List[np.ndarray]
 
         total_vals = int(nnz_per_block.sum())
         values = np.fromfile(f, dtype=np.complex64, count=total_vals)
-
         if values.size != total_vals:
             raise ValueError(
-                f"Expected {total_vals} complex64 values but only read {values.size}. "
-                f"Check dtype (complex64) and file integrity."
+                "Expected {} complex64 values but only read {}. "
+                "Check dtype (complex64) and file integrity.".format(total_vals, values.size)
             )
 
-        # Optional: detect trailing bytes
         trailing = f.read(1)
         if trailing != b"":
-            print("Warning: file has trailing bytes after expected values. "
-                  "The parser ignored trailing data.")
+            print("Warning: file has trailing bytes after expected values; ignored.")
 
-    # Split values into per-block arrays (column-major within each block)
-    blocks: List[np.ndarray] = []
+    # Split values into per-block arrays (column-major inside each block)
+    blocks = []  # type: List[np.ndarray]
     offset = 0
     for meta in metas:
         count = meta.nnz
@@ -109,22 +97,18 @@ def read_block_sparse_bin(path: Path) -> Tuple[List[BlockMeta], List[np.ndarray]
     return metas, blocks
 
 
-def plot_block_row_sizes(metas: List[BlockMeta], save_path: Path | None, show: bool, also_distribution: bool) -> None:
-    """
-    "One block size per (block) row": group blocks by their (row_start,row_stop).
-    Size is the height of that block row (row_stop-row_start).
-    """
-    # Group by unique row intervals
-    groups: Dict[Tuple[int, int], List[int]] = {}
+def plot_block_row_sizes(metas, save_path, show, also_distribution):
+    # type: (List[BlockMeta], Optional[Path], bool, bool) -> None
+    groups = {}  # type: Dict[Tuple[int, int], List[int]]
     for i, m in enumerate(metas):
         key = (m.row_start, m.row_stop)
-        groups.setdefault(key, []).append(i)
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(i)
 
-    # Sort by row_start for a stable "row index" on the x-axis
     keys_sorted = sorted(groups.keys(), key=lambda k: (k[0], k[1]))
     sizes = np.array([k[1] - k[0] for k in keys_sorted], dtype=int)
 
-    # Per-row bar chart (one bar per block-row)
     plt.figure()
     x = np.arange(sizes.size)
     plt.bar(x, sizes)
@@ -134,14 +118,13 @@ def plot_block_row_sizes(metas: List[BlockMeta], save_path: Path | None, show: b
     plt.tight_layout()
 
     if save_path is not None:
-        plt.savefig(save_path, dpi=200)
-        print(f"Saved plot: {save_path}")
+        plt.savefig(str(save_path), dpi=200)
+        print("Saved plot: {}".format(save_path))
     if show:
         plt.show()
     else:
         plt.close()
 
-    # Optional distribution histogram
     if also_distribution:
         plt.figure()
         plt.hist(sizes, bins="auto")
@@ -152,16 +135,16 @@ def plot_block_row_sizes(metas: List[BlockMeta], save_path: Path | None, show: b
 
         if save_path is not None:
             dist_path = save_path.with_name(save_path.stem + "_distribution" + save_path.suffix)
-            plt.savefig(dist_path, dpi=200)
-            print(f"Saved plot: {dist_path}")
+            plt.savefig(str(dist_path), dpi=200)
+            print("Saved plot: {}".format(dist_path))
         if show:
             plt.show()
         else:
             plt.close()
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Parse block-sparse .bin and plot block-row size histogram.")
+def main():
+    ap = argparse.ArgumentParser(description="Parse block-sparse .bin and plot block-row sizes.")
     ap.add_argument("binfile", type=Path, help="Path to .bin file")
     ap.add_argument("--save", type=Path, default=None, help="Save plot to this file (e.g., sizes.png)")
     ap.add_argument("--no-show", action="store_true", help="Do not open a window with the plot")
@@ -173,18 +156,18 @@ def main() -> None:
 
     if args.summary:
         num_blocks = len(metas)
-        max_row = max(m.row_stop for m in metas) if metas else 0
-        max_col = max(m.col_stop for m in metas) if metas else 0
-        nnz = sum(m.nnz for m in metas)
+        max_row = max([m.row_stop for m in metas]) if metas else 0
+        max_col = max([m.col_stop for m in metas]) if metas else 0
+        nnz = sum([m.nnz for m in metas])
 
-        unique_block_rows = len({(m.row_start, m.row_stop) for m in metas})
-        unique_block_cols = len({(m.col_start, m.col_stop) for m in metas})
+        unique_block_rows = len(set([(m.row_start, m.row_stop) for m in metas]))
+        unique_block_cols = len(set([(m.col_start, m.col_stop) for m in metas]))
 
-        print(f"Blocks: {num_blocks}")
-        print(f"Inferred matrix shape (upper bounds): {max_row} x {max_col}")
-        print(f"Total dense values stored (sum block areas): {nnz}")
-        print(f"Unique block-rows (unique row intervals): {unique_block_rows}")
-        print(f"Unique block-cols (unique col intervals): {unique_block_cols}")
+        print("Blocks: {}".format(num_blocks))
+        print("Inferred matrix shape (upper bounds): {} x {}".format(max_row, max_col))
+        print("Total dense values stored (sum block areas): {}".format(nnz))
+        print("Unique block-rows (unique row intervals): {}".format(unique_block_rows))
+        print("Unique block-cols (unique col intervals): {}".format(unique_block_cols))
 
     plot_block_row_sizes(
         metas,
