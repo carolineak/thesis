@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+Size of patch array & Size of matrix & CPU time & GPU time \\
+\hline
+$5 \times 5$ & $13220 \times 13220$ & 1.345411 & 0.370259 \\
+\hline
+$8 \times 8$ & $33440 \times 33440$ & 2.313212 & 1.109339 \\
+\hline
+$10 \times 10$ & $52040 \times 52040$ & 6.204834 & 1.880402 \\
+\hline
+$12 \times 12$ & $74736 \times 74736$ & 13.534871 & 1.819585 \\
+\hline
+$15 \times 15$ & $116460 \times 116460$ & 33.913670 & 2.724453 \\
+\hline
+\end{tabular}
+\caption{Computation runtimes (s) for total LU factorisation on patch-array test cases.}
+\label{tab:patch-lu-time}
+\end{table}

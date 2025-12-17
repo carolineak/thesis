@@ -7,7 +7,8 @@ where:
 - row_start/row_stop/col_start/col_stop: num_blocks x int32
 - values: concatenated complex64 (complex float32)
 
-Plots one block-row size per unique (row_start,row_stop) interval.
+Plots ONLY the distribution histogram of block-row sizes
+(one size per unique (row_start,row_stop) interval).
 """
 
 import argparse
@@ -16,6 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 
 class BlockMeta(object):
@@ -97,8 +99,8 @@ def read_block_sparse_bin(path):  # type: (Path) -> Tuple[List[BlockMeta], List[
     return metas, blocks
 
 
-def plot_block_row_sizes(metas, save_path, show, also_distribution):
-    # type: (List[BlockMeta], Optional[Path], bool, bool) -> None
+def plot_block_row_size_distribution(metas, save_path, show):
+    # type: (List[BlockMeta], Optional[Path], bool) -> None
     groups = {}  # type: Dict[Tuple[int, int], List[int]]
     for i, m in enumerate(metas):
         key = (m.row_start, m.row_stop)
@@ -109,46 +111,97 @@ def plot_block_row_sizes(metas, save_path, show, also_distribution):
     keys_sorted = sorted(groups.keys(), key=lambda k: (k[0], k[1]))
     sizes = np.array([k[1] - k[0] for k in keys_sorted], dtype=int)
 
+    if sizes.size == 0:
+        raise ValueError("No block-row sizes found. Check that the file contains blocks.")
+
+    s_min = int(sizes.min())
+    s_max = int(sizes.max())
+    s_range = max(1, s_max - s_min)
+
+    # -----------------------------
+    # Choose a sensible bin width, but force it to be a multiple of 10
+    # -----------------------------
+    q25, q75 = np.percentile(sizes, [25, 75])
+    iqr = float(q75 - q25)
+    n = float(sizes.size)
+
+    if iqr > 0.0:
+        fd_width = 2.0 * iqr / (n ** (1.0 / 3.0))
+        raw_width = max(1.0, fd_width)
+    else:
+        raw_width = 1.0
+
+    # Round UP to next multiple of 10, minimum 10
+    def round_up_to_10(x):
+        return int(math.ceil(x / 10.0) * 10)
+
+    bin_width = round_up_to_10(raw_width)
+    if bin_width < 10:
+        bin_width = 10
+
+    # Cap number of bins, keeping multiple-of-10 width
+    max_bins = 40
+    needed_bins = int(math.ceil((s_range + 1) / float(bin_width)))
+    if needed_bins > max_bins:
+        bin_width = round_up_to_10((s_range + 1) / float(max_bins))
+        if bin_width < 10:
+            bin_width = 10
+
+    # Align bins to multiples of 10 (edges on ... -0.5 to capture integer sizes)
+    start_edge = (s_min // 10) * 10 - 0.5
+    end_edge = int(math.ceil(s_max / 10.0) * 10) + 0.5 + bin_width
+    edges = np.arange(start_edge, end_edge, bin_width)
+
+    # -----------------------------
+    # Plot histogram
+    # -----------------------------
     plt.figure()
-    x = np.arange(sizes.size)
-    plt.bar(x, sizes)
-    plt.xlabel("Block-row index (sorted by row_start)")
-    plt.ylabel("Block-row size (rows)")
-    plt.title("Block-row sizes (one size per unique row interval)")
+    plt.hist(sizes, bins=edges)
+
+    plt.xlabel("Block-row size (rows)")
+    plt.ylabel("Count")
+    plt.title("Distribution of block-row sizes of 15x15 patch array")
+
+    # Count axis: integers only
+    # Y axis: ~8 ticks (let matplotlib choose "nice" real-valued ticks)
+    ax = plt.gca()
+    ax.locator_params(axis="y", nbins=8)
+
+    # -----------------------------
+    # X ticks: multiples of 10, but not every 10 (aim ~8 ticks)
+    # -----------------------------
+    base = 10
+    tick_step = int(math.ceil((s_range / 8.0) / base) * base)
+    if tick_step < 10:
+        tick_step = 10
+
+    start_tick = (s_min // base) * base
+    end_tick = int(math.ceil(s_max / float(base)) * base)
+
+    xticks = list(np.arange(start_tick, end_tick + tick_step, tick_step))
+
+    plt.xticks(xticks)
+
+    plt.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
     plt.tight_layout()
 
     if save_path is not None:
         plt.savefig(str(save_path), dpi=200)
         print("Saved plot: {}".format(save_path))
+
     if show:
         plt.show()
     else:
         plt.close()
 
-    if also_distribution:
-        plt.figure()
-        plt.hist(sizes, bins="auto")
-        plt.xlabel("Block-row size (rows)")
-        plt.ylabel("Count")
-        plt.title("Distribution of block-row sizes")
-        plt.tight_layout()
 
-        if save_path is not None:
-            dist_path = save_path.with_name(save_path.stem + "_distribution" + save_path.suffix)
-            plt.savefig(str(dist_path), dpi=200)
-            print("Saved plot: {}".format(dist_path))
-        if show:
-            plt.show()
-        else:
-            plt.close()
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Parse block-sparse .bin and plot block-row sizes.")
+    ap = argparse.ArgumentParser(description="Parse block-sparse .bin and plot block-row size distribution.")
     ap.add_argument("binfile", type=Path, help="Path to .bin file")
-    ap.add_argument("--save", type=Path, default=None, help="Save plot to this file (e.g., sizes.png)")
+    ap.add_argument("--save", type=Path, default=None, help="Save plot to this file (e.g., dist.png)")
     ap.add_argument("--no-show", action="store_true", help="Do not open a window with the plot")
-    ap.add_argument("--also-distribution", action="store_true", help="Also plot a size distribution histogram")
     ap.add_argument("--summary", action="store_true", help="Print parsed summary stats")
     args = ap.parse_args()
 
@@ -169,11 +222,10 @@ def main():
         print("Unique block-rows (unique row intervals): {}".format(unique_block_rows))
         print("Unique block-cols (unique col intervals): {}".format(unique_block_cols))
 
-    plot_block_row_sizes(
+    plot_block_row_size_distribution(
         metas,
         save_path=args.save,
         show=(not args.no_show),
-        also_distribution=args.also_distribution,
     )
 
 

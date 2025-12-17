@@ -7,9 +7,11 @@ Tables (8):
   patch_time_{L,U,S,T}_table.tex
   reflector_time_{L,U,S,T}_table.tex
 
-Plots (8):
+Plots (10):
   patch_time_{L,U,S,T}_plot.png
   reflector_time_{L,U,S,T}_plot.png
+  patch_lu_time_plot.png
+  reflector_lu_time_plot.png
 
 Usage:
   python3 compare_cpu_gpu_times.py experiment_cpu.txt experiment_gpu.txt
@@ -20,6 +22,8 @@ from typing import Dict, Any, Optional, Tuple, List
 import math
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import LogLocator, FuncFormatter
+
 
 
 # ----------------------------- selectors -----------------------------
@@ -66,7 +70,7 @@ def _fmt_time(x: Any) -> str:
 
 def _index_patch_times(results: Dict[str, Any]) -> Dict[Tuple[int, int], Dict[str, Any]]:
     """
-    Map (p1,p2) -> {"matrix": "...", "n": int, "L": time, "U": time, "S": time, "T": time}
+    Map (p1,p2) -> {"matrix": "...", "n": int, "L": time, "U": time, "S": time, "T": time, "LU": lu_time}
     """
     idx: Dict[Tuple[int, int], Dict[str, Any]] = {}
     for i, name in enumerate(results.get("name", [])):
@@ -89,13 +93,14 @@ def _index_patch_times(results: Dict[str, Any]) -> Dict[Tuple[int, int], Dict[st
             "U": results.get("U_time", [None])[i],
             "S": results.get("Schur_time", [None])[i],
             "T": results.get("Total_time", [None])[i],
+            "LU": results.get("lu_time", [None])[i],
         }
     return idx
 
 
 def _index_reflector_times(results: Dict[str, Any]) -> Dict[float, Dict[str, Any]]:
     """
-    Map freq -> {"matrix": "...", "n": int, "L": time, "U": time, "S": time, "T": time}
+    Map freq -> {"matrix": "...", "n": int, "L": time, "U": time, "S": time, "T": time, "LU": lu_time}
     """
     idx: Dict[float, Dict[str, Any]] = {}
     for i, name in enumerate(results.get("name", [])):
@@ -117,6 +122,7 @@ def _index_reflector_times(results: Dict[str, Any]) -> Dict[float, Dict[str, Any
             "U": results.get("U_time", [None])[i],
             "S": results.get("Schur_time", [None])[i],
             "T": results.get("Total_time", [None])[i],
+            "LU": results.get("lu_time", [None])[i],
         }
     return idx
 
@@ -134,12 +140,6 @@ def write_cpu_gpu_time_table(
     cpu_times: List[str],
     gpu_times: List[str],
 ) -> None:
-    """
-    4-column table:
-      |c|c|c|c|
-      First col, Size of matrix, CPU time, GPU time
-    Full grid, centered entries, caption below.
-    """
     assert len(first_col_values) == len(matrix_sizes) == len(cpu_times) == len(gpu_times)
 
     lines = []
@@ -173,6 +173,16 @@ def _to_float(x: Any) -> float:
     except Exception:
         return float("nan")
 
+def _log_tick_formatter(x, pos):
+    if x == 0:
+        return ""
+    exp = int(math.floor(math.log10(x)))
+    mant = x / (10 ** exp)
+    if abs(mant - 1) < 1e-6:
+        return rf"$10^{{{exp}}}$"
+    elif mant in (2, 5):
+        return rf"${int(mant)}\times10^{{{exp}}}$"
+    return ""
 
 def plot_cpu_gpu_times(
     outfile: str,
@@ -180,12 +190,20 @@ def plot_cpu_gpu_times(
     x_n: List[int],
     y_cpu: List[float],
     y_gpu: List[float],
+    ylabel: str = "Computation time (s)",
+    dash_last_two: bool = False,   # patch: dashed tail
+    dash_all: bool = False,        # reflector: fully dashed
 ) -> None:
     """
-    x-axis: matrix size (n)
-    y-axis: computation time (s)
+    x-axis: matrix size (n)   [log scale]
+    y-axis: time (s)          [log scale]
     two lines: CPU and GPU
+
+    - dash_last_two=True: last segment (covering last two points) is dashed
+    - dash_all=True: whole series is dashed
     """
+
+    # Filter out rows where BOTH are NaN or x is missing
     x_f, y_cpu_f, y_gpu_f = [], [], []
     for n, ct, gt in zip(x_n, y_cpu, y_gpu):
         if n is None:
@@ -197,12 +215,53 @@ def plot_cpu_gpu_times(
         y_gpu_f.append(gt)
 
     plt.figure()
-    plt.plot(x_f, y_cpu_f, marker="o", label="CPU")
-    plt.plot(x_f, y_gpu_f, marker="o", label="GPU")
+
+    def _plot_series(yvals, label):
+        # If fully dashed, just plot once (color chosen automatically)
+        if dash_all:
+            line, = plt.plot(x_f, yvals, marker="o", linestyle="--", label=label)
+            return
+
+        # If not splitting or too few points, plot solid once
+        if not dash_last_two or len(x_f) < 3:
+            line, = plt.plot(x_f, yvals, marker="o", label=label)
+            return
+
+        # Split: solid up to len-2, dashed tail covering last two points
+        cut = len(x_f) - 2
+
+        # Solid part (with label) -> capture its color
+        solid_line, = plt.plot(x_f[:cut], yvals[:cut], marker="o", label=label)
+        c = solid_line.get_color()
+
+        # Dashed tail (no label) with SAME color
+        plt.plot(
+            x_f[cut - 1:],
+            yvals[cut - 1:],
+            marker="o",
+            linestyle="--",
+            color=c,
+        )
+
+    _plot_series(y_cpu_f, "CPU")
+    _plot_series(y_gpu_f, "GPU")
+
+    plt.xscale("log")
+    plt.yscale("log")
+
+    # More labeled ticks on log x-axis (1, 2, 5 × 10^k)
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(LogLocator(base=10, subs=(1.0, 2.0, 5.0)))
+    ax.xaxis.set_major_formatter(FuncFormatter(_log_tick_formatter))
+
+    # # Y-axis: label 1, 2, 5 × 10^k
+    # ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0, 5.0)))
+    # ax.yaxis.set_major_formatter(FuncFormatter(_log_tick_formatter))
+
     plt.title(title)
     plt.xlabel("Matrix size (n)")
-    plt.ylabel("Computation time (s)")
-    plt.grid(True, linestyle="--", alpha=0.3)
+    plt.ylabel(ylabel)
+    plt.grid(True, which="both", linestyle="--", alpha=0.3)
     plt.legend()
     plt.tight_layout()
     plt.savefig(outfile, dpi=200)
@@ -218,20 +277,18 @@ def _build_patch_rows_for_kernel(
     gpu_idx: Dict[Tuple[int, int], Dict[str, Any]],
     kernel_key: str,
 ):
-    # Union of cases, sorted by patch size
     keys = sorted(set(cpu_idx.keys()) | set(gpu_idx.keys()), key=lambda k: (k[0], k[1]))
 
     first_col = [_fmt_patch_size(k[0], k[1]) for k in keys]
     matrix_sizes, cpu_times_s, gpu_times_s = [], [], []
-    y_n, x_cpu, x_gpu = [], [], []
+    x_n, y_cpu, y_gpu = [], [], []
 
     for k in keys:
         c = cpu_idx.get(k, {})
         g = gpu_idx.get(k, {})
 
-        # Prefer CPU matrix info if present, else GPU
         matrix_sizes.append(c.get("matrix") or g.get("matrix") or "-")
-        y_n.append(c.get("n") or g.get("n"))
+        x_n.append(c.get("n") or g.get("n"))
 
         ct = c.get(kernel_key)
         gt = g.get(kernel_key)
@@ -239,10 +296,10 @@ def _build_patch_rows_for_kernel(
         cpu_times_s.append(_fmt_time(ct))
         gpu_times_s.append(_fmt_time(gt))
 
-        x_cpu.append(_to_float(ct))
-        x_gpu.append(_to_float(gt))
+        y_cpu.append(_to_float(ct))
+        y_gpu.append(_to_float(gt))
 
-    return first_col, matrix_sizes, cpu_times_s, gpu_times_s, y_n, x_cpu, x_gpu
+    return first_col, matrix_sizes, cpu_times_s, gpu_times_s, x_n, y_cpu, y_gpu
 
 
 def _build_reflector_rows_for_kernel(
@@ -254,14 +311,14 @@ def _build_reflector_rows_for_kernel(
 
     first_col = [f"{k:g} GHz" for k in keys]
     matrix_sizes, cpu_times_s, gpu_times_s = [], [], []
-    y_n, x_cpu, x_gpu = [], [], []
+    x_n, y_cpu, y_gpu = [], [], []
 
     for k in keys:
         c = cpu_idx.get(k, {})
         g = gpu_idx.get(k, {})
 
         matrix_sizes.append(c.get("matrix") or g.get("matrix") or "-")
-        y_n.append(c.get("n") or g.get("n"))
+        x_n.append(c.get("n") or g.get("n"))
 
         ct = c.get(kernel_key)
         gt = g.get(kernel_key)
@@ -269,10 +326,67 @@ def _build_reflector_rows_for_kernel(
         cpu_times_s.append(_fmt_time(ct))
         gpu_times_s.append(_fmt_time(gt))
 
-        x_cpu.append(_to_float(ct))
-        x_gpu.append(_to_float(gt))
+        y_cpu.append(_to_float(ct))
+        y_gpu.append(_to_float(gt))
 
-    return first_col, matrix_sizes, cpu_times_s, gpu_times_s, y_n, x_cpu, x_gpu
+    return first_col, matrix_sizes, cpu_times_s, gpu_times_s, x_n, y_cpu, y_gpu
+
+def _build_patch_rows_for_lu_table(cpu_idx, gpu_idx):
+    keys = sorted(set(cpu_idx.keys()) | set(gpu_idx.keys()), key=lambda k: (k[0], k[1]))
+
+    first_col = [_fmt_patch_size(k[0], k[1]) for k in keys]
+    matrix_sizes, cpu_times, gpu_times = [], [], []
+
+    for k in keys:
+        c = cpu_idx.get(k, {})
+        g = gpu_idx.get(k, {})
+
+        matrix_sizes.append(c.get("matrix") or g.get("matrix") or "-")
+        cpu_times.append(_fmt_time(c.get("LU")))
+        gpu_times.append(_fmt_time(g.get("LU")))
+
+    return first_col, matrix_sizes, cpu_times, gpu_times
+
+
+def _build_reflector_rows_for_lu_table(cpu_idx, gpu_idx):
+    keys = sorted(set(cpu_idx.keys()) | set(gpu_idx.keys()))
+
+    first_col = [f"{k:g} GHz" for k in keys]
+    matrix_sizes, cpu_times, gpu_times = [], [], []
+
+    for k in keys:
+        c = cpu_idx.get(k, {})
+        g = gpu_idx.get(k, {})
+
+        matrix_sizes.append(c.get("matrix") or g.get("matrix") or "-")
+        cpu_times.append(_fmt_time(c.get("LU")))
+        gpu_times.append(_fmt_time(g.get("LU")))
+
+    return first_col, matrix_sizes, cpu_times, gpu_times
+
+
+def _build_patch_rows_for_lu(cpu_idx, gpu_idx):
+    keys = sorted(set(cpu_idx.keys()) | set(gpu_idx.keys()), key=lambda k: (k[0], k[1]))
+    x_n, y_cpu, y_gpu = [], [], []
+    for k in keys:
+        c = cpu_idx.get(k, {})
+        g = gpu_idx.get(k, {})
+        x_n.append(c.get("n") or g.get("n"))
+        y_cpu.append(_to_float(c.get("LU")))
+        y_gpu.append(_to_float(g.get("LU")))
+    return x_n, y_cpu, y_gpu
+
+
+def _build_reflector_rows_for_lu(cpu_idx, gpu_idx):
+    keys = sorted(set(cpu_idx.keys()) | set(gpu_idx.keys()))
+    x_n, y_cpu, y_gpu = [], [], []
+    for k in keys:
+        c = cpu_idx.get(k, {})
+        g = gpu_idx.get(k, {})
+        x_n.append(c.get("n") or g.get("n"))
+        y_cpu.append(_to_float(c.get("LU")))
+        y_gpu.append(_to_float(g.get("LU")))
+    return x_n, y_cpu, y_gpu
 
 
 # ----------------------------- main -----------------------------
@@ -298,15 +412,15 @@ if __name__ == "__main__":
     gpu_refl = _index_reflector_times(gpu)
 
     kernels = [
-        ("L", r"Computing $L_{21}$"),
-        ("U", r"Computing $U_{12}$"),
-        ("S", "Schur updating"),
-        ("T", "Total"),
+        ("L", r"$L_{21}$ Kernel"),
+        ("U", r"$U_{12}$ Kernel"),
+        ("S", "Schur Update Kernel"),
+        ("T", "Total Kernel Computation Time"),
     ]
 
     # ---- Patch tables + plots ----
     for key, title in kernels:
-        first_col, matrix_sizes, cpu_times_s, gpu_times_s, y_n, x_cpu, x_gpu = _build_patch_rows_for_kernel(
+        first_col, matrix_sizes, cpu_times_s, gpu_times_s, x_n, y_cpu, y_gpu = _build_patch_rows_for_kernel(
             cpu_patch, gpu_patch, key
         )
 
@@ -324,15 +438,18 @@ if __name__ == "__main__":
         plot_cpu_gpu_times(
             outfile=f"patch_time_{key}_plot.png",
             title=f"Patch arrays: {title}",
-            x_n=y_n,
-            y_cpu=x_cpu,
-            y_gpu=x_gpu,
+            x_n=x_n,
+            y_cpu=y_cpu,
+            y_gpu=y_gpu,
+            ylabel="Computation time (s)",
+            dash_last_two=True,
+            dash_all=False,
         )
 
 
     # ---- Reflector tables + plots ----
     for key, title in kernels:
-        first_col, matrix_sizes, cpu_times_s, gpu_times_s, y_n, x_cpu, x_gpu = _build_reflector_rows_for_kernel(
+        first_col, matrix_sizes, cpu_times_s, gpu_times_s, x_n, y_cpu, y_gpu = _build_reflector_rows_for_kernel(
             cpu_refl, gpu_refl, key
         )
 
@@ -350,16 +467,80 @@ if __name__ == "__main__":
         plot_cpu_gpu_times(
             outfile=f"reflector_time_{key}_plot.png",
             title=f"Reflectors with struts: {title}",
-            x_n=y_n,
-            y_cpu=x_cpu,
-            y_gpu=x_gpu,
+            x_n=x_n,
+            y_cpu=y_cpu,
+            y_gpu=y_gpu,
+            ylabel="Computation time (s)",
+            dash_last_two=False,
+            dash_all=True,
         )
+
+
+    # ---- LU total time plots (patch + reflector) ----
+    x_n, y_cpu, y_gpu = _build_patch_rows_for_lu(cpu_patch, gpu_patch)
+    plot_cpu_gpu_times(
+        outfile="patch_lu_time_plot.png",
+        title="Patch arrays: Total LU Computation Time",
+        x_n=x_n,
+        y_cpu=y_cpu,
+        y_gpu=y_gpu,
+        ylabel="Time (s)",
+        dash_last_two=True,
+        dash_all=False,
+    )
+
+    x_n, y_cpu, y_gpu = _build_reflector_rows_for_lu(cpu_refl, gpu_refl)
+    plot_cpu_gpu_times(
+        outfile="reflector_lu_time_plot.png",
+        title="Reflectors with struts: Total LU Computation time",
+        x_n=x_n,
+        y_cpu=y_cpu,
+        y_gpu=y_gpu,
+        ylabel="Time (s)",
+        dash_last_two=False,
+        dash_all=True,
+    )
+
+    # ---- LU total time tables (patch + reflector) ----
+
+    first_col, matrix_sizes, cpu_times, gpu_times = _build_patch_rows_for_lu_table(
+        cpu_patch, gpu_patch
+    )
+    write_cpu_gpu_time_table(
+        filename="patch_lu_time_table.tex",
+        caption="Computation runtimes (s) for total LU factorisation on patch-array test cases.",
+        label="tab:patch-lu-time",
+        first_col_header="Size of patch array",
+        first_col_values=first_col,
+        matrix_sizes=matrix_sizes,
+        cpu_times=cpu_times,
+        gpu_times=gpu_times,
+    )
+
+    first_col, matrix_sizes, cpu_times, gpu_times = _build_reflector_rows_for_lu_table(
+        cpu_refl, gpu_refl
+    )
+    write_cpu_gpu_time_table(
+        filename="reflector_lu_time_table.tex",
+        caption="Computation runtimes (s) for total LU factorisation on reflector-with-struts test cases.",
+        label="tab:refl-lu-time",
+        first_col_header="GHz of reflector",
+        first_col_values=first_col,
+        matrix_sizes=matrix_sizes,
+        cpu_times=cpu_times,
+        gpu_times=gpu_times,
+    )
+
 
     print("Wrote patch tables:")
     print("  patch_time_L_table.tex  patch_time_U_table.tex  patch_time_S_table.tex  patch_time_T_table.tex")
     print("Wrote reflector tables:")
     print("  reflector_time_L_table.tex  reflector_time_U_table.tex  reflector_time_S_table.tex  reflector_time_T_table.tex")
-    print("Wrote patch plots:")
+    print("Wrote kernel plots (loglog):")
     print("  patch_time_L_plot.png  patch_time_U_plot.png  patch_time_S_plot.png  patch_time_T_plot.png")
-    print("Wrote reflector plots:")
     print("  reflector_time_L_plot.png  reflector_time_U_plot.png  reflector_time_S_plot.png  reflector_time_T_plot.png")
+    print("Wrote LU total plots (loglog):")
+    print("  patch_lu_time_plot.png  reflector_lu_time_plot.png")
+    print("Wrote LU total tables:")
+    print("  patch_lu_time_table.tex  reflector_lu_time_table.tex")
+
