@@ -160,7 +160,7 @@ def plot_block_row_size_distribution(metas, save_path, show):
 
     plt.xlabel("Block-row size (rows)")
     plt.ylabel("Count")
-    plt.title("Distribution of block-row sizes of 15x15 patch array")
+    plt.title("Distribution of block-row sizes of 30 GHz relflector with struts")
 
     # Count axis: integers only
     # Y axis: ~8 ticks (let matplotlib choose "nice" real-valued ticks)
