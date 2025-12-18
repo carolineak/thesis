@@ -351,8 +351,15 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     if (!error) {
         create_test_matrix(n, b, block_structure, dense, &bsf);
 
-        // Generate x filled with ones
-        for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
+        // // Generate x filled with ones
+        // for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
+
+        // Fill x with random values between 0 and 1
+        for (int i = 0; i < n; i++) {
+            float real_part = (float)rand() / (float)RAND_MAX;
+            float imag_part = (float)rand() / (float)RAND_MAX;
+            x[i] = real_part + imag_part * I;
+        }
 
         // Compute b1 = A*x using sparse_matvec
         if (sparse_matvec(&bsf, x, n, b1, n) != 0) {
@@ -518,7 +525,14 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     float complex *b2 = malloc((size_t)n * sizeof(float complex));
 
     // Generate x filled with ones
-    for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
+    // for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
+
+    // Fill x with random values between 0 and 1
+    for (int i = 0; i < n; i++) {
+        float real_part = (float)rand() / (float)RAND_MAX;
+        float imag_part = (float)rand() / (float)RAND_MAX;
+        x[i] = real_part + imag_part * I;
+    }
 
     // Compute b1 = A*x using sparse_matvec
     if (sparse_matvec(&bsf, x, n, b1, n) != 0) {

@@ -122,8 +122,6 @@ int create(block_sparse_format *bsf,
            const int *block_lengths, 
            const float complex *data);
 
-int load_block_sparse_from_bin(const char *path, block_sparse_format *bsf);
-
 // ==================================================================
 // Prints a block sparse matrix as a dense matrix
 // Fill in empty blocks with zeros

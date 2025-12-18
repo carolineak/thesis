@@ -20,12 +20,12 @@ int main(void) {
 
     // Local tests
     printf("\nTest on xs binary data\n");
-    char *data = "../data/sparse_data_xs.bin";
+    char *data = "../experiments/data/sparse_data_xs.bin";
     run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
     // debug_print_input_bin(data);
 
     printf("\nTest on s binary data\n");
-    data = "../data/sparse_data_s.bin";
+    data = "../experiments/data/sparse_data_s.bin";
     run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
 
 
