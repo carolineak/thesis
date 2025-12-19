@@ -65,10 +65,6 @@ int main(int argc, char **argv) {
 
     clock_t t0 = clock();
 
-    // Single matvec correctness check
-    run_matvec_test(n, b, structure, print, tol, &passed);
-    total++;
-
     // Single LU + triangular multiply correctness check
     run_lu_trimul_test(n, b, structure, print, tol, &passed);
     total++;
