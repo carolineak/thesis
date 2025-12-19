@@ -4,6 +4,9 @@
 This project seeks to examine block sparse
 LU factorisation for near-field MoM matrices and whether its performance can be enhanced by offloading computations to a GPU.
 
+## Abstract
+This thesis investigates block sparse LU factorisation for near-field Method of Moments matrices and evaluates whether its performance can be improved by offloading computations to a GPU. On the algorithmic side, the work analyses fill-in behaviour and presents an elimination strategy inspired by the “Compress and Eliminate” method, showing that fill-in blocks can be deferred and handled at the end of the factorisation. This preserves the sparsity structure and avoids dynamic memory operations, making the algorithm more predictable and better suited to GPU execution. On the implementation side, a complete CPU version in C is developed and validated, then used to identify the dominant computational kernels through experiments on realistic antenna test cases. Based on this analysis, three kernels: the two triangular solves and the Schur complement update, are offloaded to the GPU in a hybrid CPU–GPU design where the CPU manages block-level bookkeeping and the GPU performs the computational kernels via cuBLAS. The resulting implementation maintains numerical accuracy and achieves an end-to-end speed-up of up to 3.6x over the CPU baseline, with significantly larger speed-ups at the kernel level, demonstrating that block sparse LU with eliminated fill-in handling is both practical and promising for GPU-accelerated electromagnetic simulation.
+
 ## Building and Running the Code
 
 The repository contains three main directories with runnable C code:
