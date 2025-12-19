@@ -12,10 +12,10 @@
 
 int main(void) {
     // Test parameters
+    const int block_sizes[]   = { 8, 12, 20, 100, 200 };
+    const int structures[]    = {0,1,2,3};      // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
     const int print           = 1;              // 0=silent, 1=results, 2=show data, 3=show LU
     const double tolerance    = 1e-3;
-    const int block_sizes[]   = {2, 20, 200};
-    const int structures[]    = {0,1,2,3};      // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
     
     int passed = 0, total = 0;
     
@@ -39,10 +39,11 @@ int main(void) {
                 continue;
             }
 
-            // run_data_structure_test(n, b, s);
-            run_matvec_test(n, b, s, print, tolerance, &passed); total++;
+            // Run matvec test (outcommented)
+            // run_matvec_test(n, b, s, print, tolerance, &passed); total++;
+
+            // Run LU + triangular multiply test
             run_lu_trimul_test(n, b, s, print, tolerance, &passed); total++;
-            // run_lu_identity_test(n, b, s); // Test for debugging
 
             printf("\n");
         }

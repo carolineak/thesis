@@ -76,8 +76,12 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     if (!error) {
         create_test_matrix(n, b, block_structure, dense, &bsf);
 
-        // Generate x filled with ones
-        for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
+        // Fill x with random values between 0 and 1
+        for (int i = 0; i < n; i++) {
+            float real_part = (float)rand() / (float)RAND_MAX;
+            float imag_part = (float)rand() / (float)RAND_MAX;
+            x[i] = real_part + imag_part * I;
+        }
 
         // Compute b1 = A*x using sparse_matvec
         if (sparse_matvec(&bsf, x, n, b1, n) != 0) {
@@ -91,7 +95,6 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     if (!error) {
         if (block_structure == 0) {
             gettimeofday(&start, NULL);
-            // int bsf_lu_status = sparse_lu(&bsf);
             int bsf_lu_status = sparse_lu_with_fill_ins(&bsf, &fill_in_matrix, &fill_in_matrix_size);
             gettimeofday(&end, NULL);
 
@@ -99,7 +102,6 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
                 fprintf(stderr, "sparse_lu failed: %d\n", bsf_lu_status);
                 error = 1;
             } else if (print >= 1) {
-                // printf("\nBlock sparse LU factorisation successful.\n");
             }
         } else if (block_structure >= 1) {
             gettimeofday(&start, NULL);
@@ -118,7 +120,6 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
                 } else if (lu_factorise_dense) {
                     dense_lu(fill_in_matrix, fill_in_matrix_size, fill_in_piv);
                 }
-                // if (print >= 1) printf("\nBlock sparse LU factorisation successful.\n");
             }
         } else {
             fprintf(stderr, "Invalid block_structure %d\n", block_structure);
@@ -178,7 +179,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
 
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
-            for (int i = 0; i < (n < 20 ? n : 20); i++) {
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
                 printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));

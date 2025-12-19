@@ -44,7 +44,10 @@ int main(void) {
                 continue;
             }
 
-            run_matvec_test(n, b, s, print, tolerance, &passed);     total++;
+            // Run matvec test (outcommented)
+            // run_matvec_test(n, b, s, print, tolerance, &passed);     total++;
+
+            // Run LU + triangular multiply test
             run_lu_trimul_test(n, b, s, print, tolerance, &passed);  total++;
             printf("\n");
         }

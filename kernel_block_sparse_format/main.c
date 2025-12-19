@@ -9,59 +9,76 @@
 #include "block_sparse_format.h"
 #include "block_sparse_test_runner.h"
 #include "load_binary_data.h"
-// REMEMBER: export PATH=${PATH}:/usr/local/cuda-13.0/bin
 
-int main(void) {
-    // Test parameters
-    const int print           = 2;              // 0=silent, 1=results, 2=show data, 3=show LU
-    const double tolerance    = 1e-3;
-    
-    int passed = 0, total = 0;
-    
-    const int block_sizes[]   = {6};
-    const int structures[]    = {0,1,2,3}; // 0=no fill-ins, 1=fill-ins 2,3=fill-ins+varying block sizes
-    size_t num_block_sizes = sizeof(block_sizes)/sizeof(block_sizes[0]);
-    size_t num_structures = sizeof(structures)/sizeof(structures[0]);
-    printf("Running block-sparse tests (%zu sizes × %zu structures)\n\n",
-           num_block_sizes,
-           num_structures);
 
-    for (size_t ib = 0; ib < num_block_sizes; ib++) {
-        int b = block_sizes[ib];
-        int n = 4 * b;
+static void usage(const char *prog) {
+    fprintf(stderr,
+        "Usage: %s [b] [structure] [print]\n"
+        "  b          : base block size (default 16)\n"
+        "  structure  : 0=no fill-ins, 1=fill-ins, 2/3=varying (default 1)\n"
+        "  print      : 0=silent, 1=summary, 2=verbose (default 1)\n",
+        prog);
+}
 
-        for (size_t is = 0; is < num_structures; is++) {
-            int s = structures[is];
-            
-            printf("→ Test: matrix of size %d x %d using block structure no. %d\n", n, n, s);
+int main(int argc, char **argv) {
+    // Default demo configuration (can be overridden via command-line arguments)
+    int b         = 16;
+    int structure = 1;
+    int print     = 1;
+    double tol    = 1e-5;
 
-            if ((s == 2 || s == 3) && (b % 2 != 0)) {
-                printf("TEST SKIPPED: b=%d (must be even) for structure %d\n\n", b, s);
-                continue;
-            }
-
-            // run_data_structure_test(n, b, s);
-            // run_matvec_test(n, b, s, print, tolerance, &passed); total++;
-            run_lu_trimul_test(n, b, s, print, tolerance, &passed); total++;
-            // run_lu_identity_test(n, b, s); // Test for debugging
-
-            printf("\n");
+    // Optional command-line overrides for b, structure, and print
+    if (argc > 1) {
+        b = atoi(argv[1]);
+        if (b <= 0) {
+            fprintf(stderr, "Invalid b=%d\n", b);
+            usage(argv[0]);
+            return 1;
         }
     }
 
-    // printf("Test on binary data\n");
-    // // char *data = "/x/users/mhg/til_ck/patch_array/patch_array_8x8.bin";
-    // char *data = "../data/sparse_data_example.bin";
-    // run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
-    // // run_lu_identity_test_with_bin_data(data);
+    if (argc > 2) {
+        structure = atoi(argv[2]);
+    }
 
-    // debug_print_input_bin(data);
+    if (argc > 3) {
+        print = atoi(argv[3]);
+    }
 
-    printf("All tests completed. Passed %d out of %d tests.\n", passed, total);
+    // Enforce the same structural restriction as in the test suite:
+    // for structure 2 and 3, the block size must be even
+    if (structure == 2 || structure == 3) {
+        if (b % 2 != 0) {
+            fprintf(stderr, "For structure %d, b must be even (got %d)\n",
+                    structure, b);
+            return 1;
+        }
+    }
 
-    return 0;
+    // Use the same relationship n = 4 * b as in the tests
+    int n = 4 * b;
+    printf("Demo: n = %d, b = %d, structure = %d, print = %d\n",
+           n, b, structure, print);
+
+    int passed = 0;
+    int total  = 0;
+
+    clock_t t0 = clock();
+
+    // Single matvec correctness check
+    run_matvec_test(n, b, structure, print, tol, &passed);
+    total++;
+
+    // Single LU + triangular multiply correctness check
+    run_lu_trimul_test(n, b, structure, print, tol, &passed);
+    total++;
+
+    clock_t t1 = clock();
+    double elapsed = (double)(t1 - t0) / CLOCKS_PER_SEC;
+
+    printf("\nDemo completed. Passed %d/%d checks. Elapsed time: %.3f s\n",
+           passed, total, elapsed);
+
+    return (passed == total) ? 0 : 1;
 }
-
-
-
 

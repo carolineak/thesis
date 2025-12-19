@@ -14,7 +14,7 @@ int main(void) {
     // Test parameters
     const int print           = 1;      // 0=silent, 1=results, 2=show data, 3=show LU
     const double tolerance    = 1e-3;
-    int on_server             = 1;      // Set to 1 when running on TICRA's server to enable those tests
+    int on_server             = 0;      // Set to 1 when running on TICRA's server to enable those tests
     
     int passed = 0, total = 0;
 
@@ -22,7 +22,6 @@ int main(void) {
     printf("\nTest on xs binary data\n");
     char *data = "../experiments/data/sparse_data_xs.bin";
     run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
-    // debug_print_input_bin(data);
 
     printf("\nTest on s binary data\n");
     data = "../experiments/data/sparse_data_s.bin";
@@ -58,6 +57,8 @@ int main(void) {
         printf("\nTest on reflector with struts 30GHz\n");
         data = "/x/users/mhg/til_ck/reflector_with_struts/case_30GHz.bin";
         run_lu_trimul_test_on_bin_data(print, tolerance, &passed, data); total++;
+    } else {
+        printf("\nSkipping tests on TICRA's server data files.\n");
     }
 
     printf("\nAll tests completed. Passed %d out of %d tests.\n", passed, total);

@@ -264,7 +264,6 @@ void sparse_print_matrix(const block_sparse_format *bsf) {
     }
 
     // Print dense matrix
-    // printf("Block sparse matrix as dense (%d x %d):\n", bsf->m, bsf->n);
     for (int r = 0; r < bsf->m; ++r) {
         for (int c = 0; c < bsf->n; ++c) {
             printf("(%5.2f,%5.2f) ", crealf(dense[r + c * bsf->m]), cimagf(dense[r + c * bsf->m]));

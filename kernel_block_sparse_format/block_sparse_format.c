@@ -370,7 +370,6 @@ void sparse_print_matrix(const block_sparse_format *bsf) {
     }
 
     // Print dense matrix
-    // printf("Block sparse matrix as dense (%d x %d):\n", bsf->m, bsf->n);
     for (int r = 0; r < bsf->m; ++r) {
         for (int c = 0; c < bsf->n; ++c) {
             printf("(%5.2f,%5.2f) ", crealf(dense[r + c * bsf->m]), cimagf(dense[r + c * bsf->m]));
@@ -593,13 +592,6 @@ int sparse_lu(block_sparse_format *bsf,
         }
     }
 
-    // Print received_fill_in for debugging
-    // printf("Rows/cols that received fill-in:\n");
-    // for (int j = 0; j < bsf->num_rows; j++) {
-    //     printf("%d ", received_fill_in[j]);
-    // }
-    // printf("\n");
-
     // ========================================================================
     // Create fill-in matrix
     // ========================================================================
@@ -639,8 +631,6 @@ int sparse_lu(block_sparse_format *bsf,
     // =======================================================================
     for (int i = 0; i < bsf->num_rows; ++i) {
 
-        // printf("\n============== ROW %d ============\n", i);
-
         // Find diagonal block index
         int diag_idx = -1;
         for (int ii = 0; ii < bsf->rows[i].num_blocks; ++ii) {
@@ -660,7 +650,6 @@ int sparse_lu(block_sparse_format *bsf,
 
         // Skip row/col if it has received fill-in
         if (received_fill_in[i]) {
-            // printf("Row/col %d has received fill-in, skipping\n", i);
             continue;
         }
 
@@ -681,7 +670,6 @@ int sparse_lu(block_sparse_format *bsf,
             fprintf(stderr, "[sparse_lu] block_lu failed info=%d\n", info);
             return -1;
         }
-        // printf("LU factorized diagonal block (%d, %d) at index %d on host\n", i, i, diag_idx);
 
         // Copy the updated LU factors to device so subsequent device triangular solve calls
         // operate on the updated diagonal
@@ -877,51 +865,6 @@ int sparse_lu(block_sparse_format *bsf,
                 matmul_counts[2] += 1; // Schur update count
             }
         }
-
-        // // After processing each row print block (2,2) on both host and device for debugging
-        // // printf("Block (2,2) after processing row %d:\n", i);
-        // int block_22_idx = -1;
-        // for (int k = 0; k < num_blocks; ++k) {
-        //     if (bsf->row_indices[k] == 2 && bsf->col_indices[k] == 2) {
-        //         block_22_idx = k;
-        //         break;
-        //     }
-        // }
-        // if (block_22_idx >= 0) {
-        //     // Download block from device
-        //     size_t M_22 = range_length(bsf->rows[2].range);
-        //     size_t N_22 = range_length(bsf->cols[2].range);
-        //     size_t elems_22 = M_22 * N_22;
-        //     size_t bytes_22 = elems_22 * sizeof(cuFloatComplex);
-        //     cuFloatComplex *d_block_22 = bsf->d_flat_data + bsf->offsets[block_22_idx];
-        //     cuFloatComplex *h_block_22 = (cuFloatComplex*)malloc(bytes_22);
-        //     if (h_block_22) {
-        //         cudaError_t err = cudaMemcpy(h_block_22, d_block_22, bytes_22, cudaMemcpyDeviceToHost);
-        //         if (err == cudaSuccess) {
-        //             printf("Device block (2,2):\n");
-        //             for (size_t r = 0; r < M_22; ++r) {
-        //                 for (size_t c = 0; c < N_22; ++c) {
-        //                     size_t idx = r + c * M_22;
-        //                     printf("(%5.2f,%5.2f) ", h_block_22[idx].x, h_block_22[idx].y);
-        //                 }
-        //                 printf("\n");
-        //             }
-        //         }
-        //         free(h_block_22);
-        //     }
-        // }
-
-        // // Print host block (2,2)
-        // if (block_22_idx >= 0) {
-        //     printf("Host block (2,2):\n");
-        //     for (int c = 0; c < range_length(bsf->cols[2].range); ++c) {
-        //         for (int r = 0; r < range_length(bsf->rows[2].range); ++r) {
-        //             int idx = bsf->offsets[block_22_idx] + r + c * range_length(bsf->rows[2].range);
-        //             printf("(%5.2f,%5.2f) ", crealf(bsf->flat_data[idx]), cimagf(bsf->flat_data[idx]));
-        //         }
-        //         printf("\n");
-        //     }
-        // }
     }
 
     // After completing device-side Schur updates, download full flat_data
@@ -932,7 +875,6 @@ int sparse_lu(block_sparse_format *bsf,
     // ========================================================================
     // Moving blocks to fill-in matrix
     // ========================================================================
-    // printf("\n======= AFTER PROCESSING ALL ROWS =======\n");
 
     // Zero out the blocks in the original matrix that were moved to the fill-in matrix
     for (int k = 0; k < bsf->num_blocks; ++k) {
@@ -965,32 +907,6 @@ int sparse_lu(block_sparse_format *bsf,
             }
         }
     }
-
-    // printf("Final matrix after moving fill-ins:\n");
-    // sparse_print_matrix(bsf);
-
-    // print fill_in_matrix for debugging
-    // printf("Fill-in matrix (%d x %d):\n", fill_in_matrix_size, fill_in_matrix_size);
-    // for (int r = 0; r < fill_in_matrix_size; ++r) {
-    //     for (int c = 0; c < fill_in_matrix_size; ++c) {
-    //         printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
-    //     }
-    //     printf("\n");
-    // }
-
-    // printf("Received fill_in final flags:\n");
-    // for (int j = 0; j < bsf->num_rows; j++) {
-    //     printf("%d ", received_fill_in[j]);
-    // }
-    // printf("\n");
-
-    // Print block id's that are in lower triangular part
-    // printf("Blocks marked as lower triangular:\n");
-    // for (int k = 0; k < bsf->num_blocks; ++k) {
-    //     if (bsf->is_lower[k]) {
-    //         printf("Block %d at (%d, %d) is lower triangular\n", k, bsf->row_indices[k], bsf->col_indices[k]);
-    //     }
-    // }
 
     // =======================================================================
     // Set outputs and clean up

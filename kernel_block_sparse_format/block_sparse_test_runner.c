@@ -29,6 +29,9 @@ void dense_matvec(int M, int N,
                     &beta, Y, 1);
 }
 
+// ===========================================================================
+// Run data structure test for synthetic test matrices
+// ===========================================================================
 void run_data_structure_test(int n, int b, int block_structure) {
     block_sparse_format bsf;
     float complex *dense = malloc((size_t)n * n * sizeof(float complex));
@@ -351,9 +354,6 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
     if (!error) {
         create_test_matrix(n, b, block_structure, dense, &bsf);
 
-        // // Generate x filled with ones
-        // for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
-
         // Fill x with random values between 0 and 1
         for (int i = 0; i < n; i++) {
             float real_part = (float)rand() / (float)RAND_MAX;
@@ -368,10 +368,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
         }
     }
 
-    // printf("The original A:\n");
-    // sparse_print_matrix(&bsf);
-
-    // Factorize block sparse matrix
+    // Factorise block sparse matrix
     int lu_factorise_dense = 1;
     if (!error) {
         if (block_structure == 0) {
@@ -475,7 +472,7 @@ void run_lu_trimul_test(int n, int b, int block_structure, int print, double tol
 
         if (print >= 2) {
             printf("\nFirst few entries of b1 and b2:\n");
-            for (int i = 0; i < (n < 20 ? n : 20); i++) {
+            for (int i = 0; i < (n < 8 ? n : 8); i++) {
                 printf("b1[%d] = (%5.2f,%5.2f)   b2[%d] = (%5.2f,%5.2f)\n",
                     i, crealf(b1[i]), cimagf(b1[i]),
                     i, crealf(b2[i]), cimagf(b2[i]));
@@ -524,9 +521,6 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
     float complex *b1 = malloc((size_t)n * sizeof(float complex));
     float complex *b2 = malloc((size_t)n * sizeof(float complex));
 
-    // Generate x filled with ones
-    // for (int i = 0; i < n; i++) x[i] = 1.0f + 0.0f*I;
-
     // Fill x with random values between 0 and 1
     for (int i = 0; i < n; i++) {
         float real_part = (float)rand() / (float)RAND_MAX;
@@ -539,9 +533,6 @@ void run_lu_trimul_test_on_bin_data(int print, double tolerance, int *passed, ch
         fprintf(stderr, "sparse_matvec failed\n");
         error = 1;
     }
-
-    // printf("The original A:\n");
-    // sparse_print_matrix(&bsf);
 
     // Print size of matrix A
     printf("Matrix size: %d x %d\n", n, n);
@@ -663,7 +654,7 @@ void run_lu_identity_test(int n, int b, int block_structure, int print) {
     printf("The original A:\n");
     sparse_print_matrix(&bsf);
 
-    // Factorize block sparse matrix and fill-in matrix
+    // Factorise block sparse matrix and fill-in matrix
     int lu_factorise_dense = 1;
     if (block_structure == 0) {
         int bsf_lu_status = sparse_lu(&bsf, &fill_in_matrix, &fill_in_matrix_size, &received_fill_in, print);
@@ -767,11 +758,6 @@ void run_lu_identity_test_with_bin_data(char *data, int print) {
 
     load_block_sparse_from_bin(data, &bsf);
     int n = bsf.n;
-    
-    int print_start1 = 45; //105;
-    int print_end1 = 55; //115;
-    int print_start2 = 45; //140;
-    int print_end2 = 55; //150;
 
     printf("The original A:\n");
     sparse_print_matrix(&bsf);
@@ -798,8 +784,8 @@ void run_lu_identity_test_with_bin_data(char *data, int print) {
     } else {
         printf("\nThe dense matrix A_d (unfactorised):\n");
     }
-    for (int r = 0; r < 10; ++r) {
-        for (int c = 0; c < 10; ++c) {
+    for (int r = 0; r < fill_in_matrix_size; ++r) {
+        for (int c = 0; c < fill_in_matrix_size; ++c) {
             printf("(%5.2f,%5.2f) ", crealf(fill_in_matrix[r + c * fill_in_matrix_size]), cimagf(fill_in_matrix[r + c * fill_in_matrix_size]));
         }
         printf("\n");
@@ -809,8 +795,8 @@ void run_lu_identity_test_with_bin_data(char *data, int print) {
     sparse_identity_test(&bsf, A_sparse_reconstructed);
 
     printf("\nMatrix reconstructed from L_s*U_s*I:\n");
-    for (int i = print_start1; i < print_end1; ++i) {
-        for (int j = print_start2; j < print_end2; ++j) {
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
             float complex z = A_sparse_reconstructed[j*(size_t)n + i];
             printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
         }
@@ -825,8 +811,8 @@ void run_lu_identity_test_with_bin_data(char *data, int print) {
     } else {
         printf("\nMatrix reconstructed from A_d*I:\n");
     }
-    for (int i = print_start1; i < print_end1; ++i) {
-        for (int j = print_start2; j < print_end2; ++j) {
+    for (int i = 0; i < fill_in_matrix_size; ++i) {
+        for (int j = 0; j < fill_in_matrix_size; ++j) {
             float complex z = A_dense_reconstructed[j*(size_t)n + i];
             printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
         }
@@ -841,8 +827,8 @@ void run_lu_identity_test_with_bin_data(char *data, int print) {
     } else {
         printf("\nA reconstructed from L_s*A_d*U_s*I:\n");
     }
-    for (int i = print_start1; i < print_end1; ++i) {
-        for (int j = print_start2; j < print_end2; ++j) {
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
             float complex z = A_all_factors_reconstructed[j*(size_t)n + i];
             printf("(%5.2f,%5.2f) ", crealf(z), cimagf(z));
         }
